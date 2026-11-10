@@ -21,7 +21,8 @@ function serviceWorker(cachePrefix: string): Plugin {
     name: 'mergebloom-service-worker',
     generateBundle(_options, bundle) {
       const builtFiles = Object.keys(bundle).filter((file) => /\.(js|css)$/.test(file));
-      const publicFiles = walkPublic('public');
+      const lazy = /\/(map\.webp|pose-.*\.webp)$/;
+      const publicFiles = walkPublic('public').filter((file) => !lazy.test(file));
       const manifest = [
         './index.html',
         ...publicFiles.filter((file) => !file.endsWith('/sw.js')),
