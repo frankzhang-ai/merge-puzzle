@@ -1,0 +1,7 @@
+node_modules/
+dist/
+screenshots/
+codex-*.log
+codex-last.txt
+codex-run.log
+.DS_Store
