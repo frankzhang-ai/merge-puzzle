@@ -8,7 +8,7 @@ import { stars, unlocked } from '../systems/progress.ts';
 import { dailyGoal, updateStreak } from '../systems/daily.ts';
 import { discoverFlowers, hasRainbowGarden } from '../systems/album.ts';
 import { consumeUse, dailyUses as getDailyUses } from '../systems/powerups.ts';
-import { read, write } from '../systems/storage.ts';
+import { clearPrefixedStorage, read, write } from '../systems/storage.ts';
 import { track } from '../systems/analytics.ts';
 import {
   BOARD, addButton, addFlower, addText, cellCenter, drawStone, drawVine, paintBackground, MUTED, INK,
@@ -61,7 +61,7 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#fff6fb');
     this.wireHook();
     const todayKey = today();
-    if (!localStorage.getItem('mp.first')) write('first', todayKey);
+    if (read<string | null>('first', null) === null) write('first', todayKey);
     else if (read('first', todayKey) !== todayKey && read('lastReturn', '') !== todayKey) {
       track('mp-continue');
       write('lastReturn', todayKey);
@@ -105,9 +105,7 @@ export class GameScene extends Phaser.Scene {
           self.saveAlbum();
         },
         resetStorage: () => {
-          for (const key of Object.keys(localStorage)) {
-            if (key.startsWith('mp.')) localStorage.removeItem(key);
-          }
+          clearPrefixedStorage();
         },
       },
     };

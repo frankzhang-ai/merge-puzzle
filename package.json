@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
+    "build": "tsc --noEmit && vite build --mode preview2",
+    "preview": "vite preview --outDir dist-preview2 --port 4173",
     "test": "node --experimental-strip-types --test tests/*.test.ts"
   },
   "dependencies": {
