@@ -1,0 +1,1 @@
+export function updateStreak(last:string|null,today:string,streak:number):number{if(last===today)return streak;const d=new Date(`${today}T12:00:00`),p=new Date(`${last}T12:00:00`);p.setDate(p.getDate()+1);return last&&p.toISOString().slice(0,10)===today?streak+1:1}

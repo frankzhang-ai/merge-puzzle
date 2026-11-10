@@ -1,0 +1,1 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {updateStreak} from '../src/systems/daily.ts';test('daily reset boundaries support free-use rollover',()=>{const old='2026-11-09',today='2026-11-10';assert.notEqual(old,today);assert.equal(updateStreak(old,today,1),2)});

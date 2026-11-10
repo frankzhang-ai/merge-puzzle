@@ -1,0 +1,2 @@
+export function shouldSkip(host:string,webdriver:boolean,qa:boolean):boolean{return host==='localhost'||host==='127.0.0.1'||webdriver||qa}
+export function track(path:string):void{if(typeof window==='undefined'||shouldSkip(location.hostname,navigator.webdriver,location.search.includes('qa=1')))return;const w=window as Window&{goatcounter?:{count:(x:{path:string})=>void}};w.goatcounter?.count({path})}

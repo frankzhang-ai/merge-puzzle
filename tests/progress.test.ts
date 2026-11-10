@@ -1,0 +1,1 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {stars,unlocked} from '../src/systems/progress.ts';test('star thresholds and unlocks',()=>{assert.equal(stars(2,3,8),1);assert.equal(stars(3,3,8),2);assert.equal(stars(8,3,8),3);assert.equal(unlocked([1],2),true);assert.equal(unlocked([],2),false)});
