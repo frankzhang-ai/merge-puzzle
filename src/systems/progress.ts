@@ -1,2 +1,9 @@
-export function stars(moves:number,two:number,three:number):number{return moves>=three?3:moves>=two?2:1}
-export function unlocked(best:number[],n:number):boolean{return n===1||best[n-2]!>0}
+export function stars(movesLeft: number, twoStar: number, threeStar: number): number {
+  if (movesLeft >= threeStar) return 3;
+  if (movesLeft >= twoStar) return 2;
+  return 1;
+}
+
+export function unlocked(bestStars: number[], level: number): boolean {
+  return level === 1 || (bestStars[level - 2] ?? 0) > 0;
+}

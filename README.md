@@ -14,4 +14,4 @@ Tap a column to drop the previewed flower or vertical pair. Flowers fall with gr
 - `npm run preview` previews the production build.
 - `python3 tools/make_icons.py` generates PWA icons.
 
-Deploy the contents of `dist/` to the root of a GitHub Pages `gh-pages` branch, including `.nojekyll`.
+Deploy with `bash tools/deploy-pages.sh`, which builds the site and force-pushes `dist/` to the `gh-pages` branch root (includes `.nojekyll`). The live URL is https://frankzhang-ai.github.io/merge-puzzle/.

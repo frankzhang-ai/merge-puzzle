@@ -1,1 +1,36 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Merge Bloom"><meta name="theme-color" content="#fff6fb"><link rel="manifest" href="./manifest.webmanifest"><link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png"><link rel="icon" sizes="32x32" href="./icons/favicon-32.png"><title>MERGE BLOOM</title></head><body><div id="game"></div><div id="splash"><div class="dots">● ● ●</div><div>MERGE BLOOM</div></div><script type="module" src="/src/main.ts"></script><script>if(location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'&&!navigator.webdriver&&!location.search.includes('qa=1')){const s=document.createElement('script');s.dataset.goatcounter='https://onesecond.goatcounter.com/count';s.src='//gc.zgo.at/count.js';s.async=true;document.head.appendChild(s)}</script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Merge Bloom">
+    <meta name="theme-color" content="#fff6fb">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
+    <link rel="apple-touch-startup-image" href="./icons/splash-1170x2532.png" media="(device-width: 390px) and (device-height: 844px)">
+    <link rel="apple-touch-startup-image" href="./icons/splash-1290x2796.png" media="(device-width: 430px) and (device-height: 932px)">
+    <link rel="apple-touch-startup-image" href="./icons/splash-750x1334.png" media="(device-width: 375px) and (device-height: 667px)">
+    <link rel="icon" sizes="32x32" href="./icons/favicon-32.png">
+    <title>MERGE BLOOM</title>
+  </head>
+  <body>
+    <div id="game"></div>
+    <div id="splash"><div class="dots">● ● ●</div><div>MERGE BLOOM</div></div>
+    <script type="module" src="./src/main.ts"></script>
+    <script>
+      const skipAnalytics = location.hostname === 'localhost'
+        || location.hostname === '127.0.0.1'
+        || navigator.webdriver
+        || location.search.includes('qa=1');
+      if (!skipAnalytics) {
+        const script = document.createElement('script');
+        script.dataset.goatcounter = 'https://onesecond.goatcounter.com/count';
+        script.src = '//gc.zgo.at/count.js';
+        script.async = true;
+        document.head.appendChild(script);
+      }
+    </script>
+  </body>
+</html>

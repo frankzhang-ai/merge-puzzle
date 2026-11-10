@@ -1,2 +1,26 @@
-export class RNG {private s:number; constructor(seed:number){this.s=seed>>>0} next(){this.s=(this.s*1664525+1013904223)>>>0;return this.s/4294967296} int(n:number){return Math.floor(this.next()*n)}}
-export function piece(r:RNG, max=2):number[]{const pair=max>=2&&r.next()<0.18;const cap=Math.min(4,max);return Array.from({length:pair?2:1},()=>1+r.int(cap))}
+import { RNG, piece as randomPiece } from './board.ts';
+
+export { RNG, randomPiece as piece };
+
+/** Campaign piece bias: early levels stay on low singles, later levels add pairs. */
+export function pieceForLevel(random: RNG, levelNo: number): number[] {
+  const maxLevel = levelNo <= 5 ? 2
+    : levelNo <= 11 ? 3
+    : levelNo <= 24 ? 4
+    : 5;
+  const cap = Math.min(4, maxLevel);
+  const pairChance = levelNo <= 5 ? 0.04 : levelNo <= 12 ? 0.16 : 0.28;
+  const isPair = cap >= 2 && random.next() < pairChance;
+  const count = isPair ? 2 : 1;
+  const levels: number[] = [];
+  for (let index = 0; index < count; index += 1) {
+    // Early levels favor L1; later levels use the full cap more evenly.
+    if (levelNo <= 2 && random.next() < 0.8) levels.push(1);
+    else levels.push(1 + random.int(cap));
+  }
+  return levels;
+}
+
+export function pieceForDaily(random: RNG): number[] {
+  return randomPiece(random, 3);
+}
