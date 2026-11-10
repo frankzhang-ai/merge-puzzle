@@ -86,6 +86,81 @@ export function groups(board: Grid): FlowerGroup[] {
 }
 
 export interface ResolveResult { score: number; created: number[]; cleared: number; chain: number }
+export interface ResolveStep { score: number; created: number[]; cleared: number; chain: number; cells: [number, number][]; target: [number, number]; board: Grid }
+
+/** Resolve one simultaneous match wave at a time; each yielded snapshot is an animation beat. */
+export function resolveSteps(board: Grid, anchor?: number): ResolveStep[] {
+  const steps: ResolveStep[] = [];
+  let chain = 0;
+  while (true) {
+    const matches = groups(board);
+    if (!matches.length) {
+      let vineCleared = false;
+      let cleared = 0;
+      const cells: [number, number][] = [];
+      for (let row = 0; row < board.length; row += 1) {
+        for (let column = 0; column < (board[0]?.length ?? 0); column += 1) {
+          const vine = board[row]![column];
+          if (vine?.kind !== 'flower' || !vine.vine) continue;
+          if (connectedSameLevelCount(board, row, column) >= 3) {
+            vine.vine = false;
+            cleared += 1;
+            vineCleared = true;
+            cells.push([row, column]);
+          }
+        }
+      }
+      if (vineCleared) {
+        gravity(board);
+        chain += 1;
+        steps.push({
+          score: 0, created: [], cleared, chain, cells, target: cells[0] ?? [0, 0],
+          board: cloneBoard(board),
+        });
+        continue;
+      }
+      break;
+    }
+    chain += 1;
+    const waveCells: [number, number][] = [];
+    let score = 0;
+    let cleared = 0;
+    const created: number[] = [];
+    let target: [number, number] = [0, 0];
+    for (const match of matches) {
+      const ordered = [...match.cells].sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+      const anchorCell = match.cells.find(([r, c]) => board[r]?.[c]?.kind === 'flower' && board[r]![c]!.id === anchor);
+      target = anchorCell ?? ordered[0]!;
+      waveCells.push(...match.cells);
+      score += match.level * 10 * match.cells.length * chain;
+      for (const [r, c] of match.cells) board[r]![c] = null;
+      if (match.level < 8) {
+        board[target[0]]![target[1]] = { kind: 'flower', level: match.level + 1, id: anchor };
+        created.push(match.level + 1);
+      } else {
+        created.push(8);
+      }
+      for (let r = 0; r < board.length; r += 1) {
+        for (let c = 0; c < (board[0]?.length ?? 0); c += 1) {
+          const near = match.cells.some(([y, x]) => Math.abs(y - r) + Math.abs(x - c) === 1);
+          const cell = board[r]![c];
+          if (!near) continue;
+          if (cell?.kind === 'stone') {
+            cell.hp -= 1;
+            if (cell.hp <= 0) { board[r]![c] = null; cleared += 1; }
+          } else if (cell?.kind === 'flower' && cell.vine) {
+            cell.vine = false;
+            cleared += 1;
+          }
+        }
+      }
+    }
+    gravity(board);
+    steps.push({ score, created, cleared, chain, cells: waveCells, target, board: cloneBoard(board) });
+  }
+  return steps;
+}
+
 export function resolve(board: Grid, anchor: number | undefined, startingScore = 0): ResolveResult {
   let score = startingScore;
   let chain = 0;

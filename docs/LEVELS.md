@@ -6,7 +6,7 @@ Starting obstacle locations are deterministic in `src/config/levels.ts`; stones 
 |---:|:---:|---|---:|---:|---:|---|---|
 | 1 | No | Make 1 × Lv.3 | 20 | 3 | 8 | None | mostly singles L1; occasional L2 |
 | 2 | No | Make 2 × Lv.3 | 18 | 3 | 7 | None | singles L1–L2 |
-| 3 | No | Score 200 | 20 | 3 | 8 | None | singles L1–L2 |
+| 3 | No | Score 200 | 20 | 3 | 8 | 1 stone + 1 vine flower | singles L1–L2 |
 | 4 | No | Clear 3 obstacles | 16 | 3 | 6 | 3 stones | singles L1–L2 |
 | 5 | Yes | Make 1 × Lv.4 AND clear 2 obstacles | 18 | 3 | 7 | 2 stones + L1 flowers | singles L1–L2 |
 | 6 | No | Make 3 × Lv.3 | 18 | 3 | 7 | None | occasional pairs L1–L2 |

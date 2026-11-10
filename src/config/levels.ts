@@ -57,6 +57,7 @@ const rows: LevelRow[] = [
 
 const bosses = new Set([5, 10, 15, 20, 25, 30]);
 const stoneCells: Record<number, number[][]> = {
+  3: [[8, 3]],
   4: [[4, 1], [5, 3], [4, 5]],
   5: [[5, 2], [6, 4]],
   10: [[4, 1], [6, 3], [4, 5]],
@@ -70,6 +71,7 @@ const stoneCells: Record<number, number[][]> = {
   30: [[4, 1], [6, 3], [4, 5], [6, 5]],
 };
 const vineCells: Record<number, number[][]> = {
+  3: [[7, 2]],
   7: [[6, 0], [6, 2], [6, 4], [6, 6]],
   14: [[6, 0], [6, 6], [5, 3]],
   17: [[6, 0], [6, 2], [6, 4], [6, 6], [7, 1], [7, 5]],

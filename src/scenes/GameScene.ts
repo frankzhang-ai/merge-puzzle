@@ -11,8 +11,12 @@ import { consumeUse, dailyUses as getDailyUses } from '../systems/powerups.ts';
 import { clearPrefixedStorage, read, write } from '../systems/storage.ts';
 import { track } from '../systems/analytics.ts';
 import {
-  BOARD, addButton, addFlower, addText, cellCenter, drawStone, drawVine, paintBackground, MUTED, INK,
+  BOARD, addBoardFrame, addButton, addFlower, addIconButton, addText, cellCenter,
+  drawStone, drawVine, goalIconKey, goalSentence, paintBackground, MUTED, INK,
 } from '../objects/draw.ts';
+import { ART, lazyArt, preloadArt } from '../objects/assets.ts';
+import { resolveSteps } from '../systems/board.ts';
+import { MAP_NODES, MAP_SIZE } from '../config/mapNodes.ts';
 
 export async function tryRewardedAd(_kind: string): Promise<boolean> {
   return false;
@@ -52,6 +56,12 @@ export class GameScene extends Phaser.Scene {
   failReason = 'Board full';
   celebration = '';
   busy = false;
+  tutorialActive = false;
+  tutorialStep = 0;
+  tutorialHint = '';
+  mapScroll = 0;
+
+  preload(): void { preloadArt(this); }
 
   constructor() {
     super('main');
@@ -70,7 +80,8 @@ export class GameScene extends Phaser.Scene {
     this.scale.on('resize', () => {
       if (!this.busy) this.draw();
     });
-    this.draw();
+    if (!read('tutorialDone', false)) this.startLevel(1, true, true);
+    else this.draw();
   }
 
   wireHook(): void {
@@ -194,7 +205,7 @@ export class GameScene extends Phaser.Scene {
     return this.mode === 'daily' ? pieceForDaily(this.rng) : pieceForLevel(this.rng, this.levelNo);
   }
 
-  startLevel(levelNumber: number, force = false): void {
+  startLevel(levelNumber: number, force = false, tutorial = false): void {
     if (!force && !unlocked(this.best, levelNumber)) return;
     this.busy = false;
     this.mode = 'campaign';
@@ -211,12 +222,49 @@ export class GameScene extends Phaser.Scene {
     this.made = {};
     this.targeting = '';
     this.snapUndo = null;
-    this.rng = new RNG(levelNumber * 100003 + Date.now());
+    const keepTeaching = tutorial || (!read('tutorialDone', false) && levelNumber <= 3);
+    this.tutorialActive = keepTeaching && levelNumber <= 3;
+    this.tutorialStep = this.tutorialActive ? 1 : 0;
+    this.tutorialHint = '';
+    this.rng = new RNG(levelNumber * 100003);
     this.next = this.nextPiece();
+    if (this.tutorialActive) {
+      if (levelNumber === 1) { this.board = emptyBoard(); this.board[8]![3] = {kind:'flower',level:1}; this.next=[1]; this.setTutorialHint('Tap a column to drop the flower.'); }
+      if (levelNumber === 2) {
+        this.board=emptyBoard(); this.board[8]![0]={kind:'flower',level:3}; this.board[8]![1]={kind:'flower',level:3};
+        this.board[8]![3]={kind:'flower',level:2}; this.board[8]![4]={kind:'flower',level:2}; this.next=[2];
+        this.setTutorialHint('Merges can chain! Drop here.');
+      }
+      if (levelNumber === 3) {
+        this.board=emptyBoard(); this.board[8]![3]={kind:'stone',hp:1};
+        this.board[7]![2]={kind:'flower',level:1,vine:true};
+        this.board[8]![1]={kind:'flower',level:1}; this.board[8]![2]={kind:'flower',level:1}; this.next=[1];
+        this.setTutorialHint('A merge next to a stone cracks it.');
+      }
+    }
     this.screen = 'game';
     this.saveAlbum();
     track(`mp-level-start-${levelNumber}`);
     this.draw();
+  }
+
+  setTutorialHint(hint: string): void {
+    this.tutorialHint=hint;
+    track(`mp-tutorial-step-${this.tutorialStep}`);
+  }
+  skipTutorial(): void {
+    if (!this.tutorialActive) return;
+    track('mp-tutorial-skip'); this.tutorialActive=false; this.tutorialStep=0;
+    write('tutorialDone',true); this.draw();
+  }
+  tutorialContinue(): void {
+    if (!this.tutorialActive || this.busy) return;
+    if (this.levelNo===1 && this.tutorialStep===1) { this.tutorialStep=2; this.setTutorialHint('Match 3 same-level flowers that touch to merge them.'); }
+    else if (this.levelNo===3 && this.tutorialStep===1) { this.tutorialStep=2; this.setTutorialHint('Vines unwrap when a merge happens beside them.'); }
+    else if (this.levelNo===3 && this.tutorialStep>=2 && this.tutorialStep<5) {
+      this.tutorialStep++;
+      this.setTutorialHint(['','', 'Undo takes back your last drop.','Hammer clears one tile.','Shuffle rearranges flowers.'][this.tutorialStep]!);
+    } else { this.tutorialActive=false; write('tutorialDone',true); this.draw(); }
   }
 
   startDaily(date = today()): void {
@@ -286,9 +334,11 @@ export class GameScene extends Phaser.Scene {
     this.children.removeAll();
     this.buttons = {};
     paintBackground(this);
-    if (this.screen !== 'game' && this.screen !== 'pause') {
-      addText(this, 390, 82, 'MERGE BLOOM', 48);
-    }
+    if(this.screen==='map') lazyArt(this,ART.map);
+    if(this.screen==='clear') lazyArt(this,ART.clearPose);
+    if(this.screen==='fail') lazyArt(this,ART.failPose);
+    if(this.screen==='daily') lazyArt(this,ART.dailyPose);
+    if(this.screen==='album') lazyArt(this,ART.albumPose);
 
     if (this.screen === 'menu') this.drawMenu();
     else if (this.screen === 'map') this.drawMap();
@@ -298,74 +348,176 @@ export class GameScene extends Phaser.Scene {
     else if (this.screen === 'pause') this.drawPause();
     else if (this.screen === 'clear' || this.screen === 'fail') this.drawResult();
     else if (this.screen === 'album') this.drawAlbum();
+    if(this.tutorialActive && this.screen==='game') this.drawTutorial();
+  }
+
+  drawTutorial(): void {
+    const column = this.levelNo === 1 ? 3 : this.levelNo === 2 ? 2 : this.tutorialStep === 1 ? 0 : -1;
+    const highlight = column >= 0 ? this.buttons[`column${column}`] : (
+      this.tutorialStep === 3 ? this.buttons.undo
+        : this.tutorialStep === 4 ? this.buttons.hammer
+          : this.tutorialStep === 5 ? this.buttons.shuffle : undefined
+    );
+    const shade = this.add.graphics().setDepth(90);
+    shade.fillStyle(0x241c2d, 0.55);
+    shade.fillRect(0, 0, 780, 1688);
+    if (highlight) {
+      shade.setBlendMode(Phaser.BlendModes.NORMAL);
+      const g = this.add.graphics().setDepth(91);
+      g.fillStyle(0x000000, 1);
+      g.fillRoundedRect(highlight.x + 4, highlight.y + 4, highlight.w - 8, highlight.h - 8, 20);
+      const mask = g.createGeometryMask();
+      mask.invertAlpha = true;
+      shade.setMask(mask);
+      const ring = this.add.graphics().setDepth(92);
+      ring.lineStyle(8, 0xffd45e, 1);
+      ring.strokeRoundedRect(highlight.x + 6, highlight.y + 6, highlight.w - 12, highlight.h - 12, 22);
+      const hx = highlight.x + highlight.w / 2;
+      const hy = Math.min(highlight.y + highlight.h - 20, 1500);
+      const hand = this.add.image(hx + 36, hy, ART.hand).setDisplaySize(96, 96).setDepth(93);
+      this.tweens.add({ targets: hand, y: hy + 18, duration: 450, yoyo: true, repeat: -1 });
+    }
+    addText(this, 390, 118, this.tutorialHint, 26, '#ffffff', { wordWrap: { width: 520 } }).setDepth(94);
+    const skip = this.add.container(650, 92).setDepth(96);
+    const skipBg = this.add.graphics();
+    skipBg.fillStyle(0xffd45e, 1);
+    skipBg.fillRoundedRect(-80, -32, 160, 64, 22);
+    skip.add(skipBg);
+    skip.add(addText(this, 0, 0, 'SKIP', 22, INK));
+    this.buttons.tutorialSkip = { x: 570, y: 60, w: 160, h: 64 };
+    this.add.zone(570, 60, 160, 64).setOrigin(0).setDepth(97)
+      .setInteractive(new Phaser.Geom.Rectangle(0, 0, 160, 64), Phaser.Geom.Rectangle.Contains)
+      .on('pointerdown', () => this.skipTutorial());
+    if (this.levelNo === 3 && this.tutorialStep >= 2) {
+      this.add.zone(0, 180, 780, 1500).setOrigin(0).setDepth(94)
+        .setInteractive(new Phaser.Geom.Rectangle(0, 0, 780, 1500), Phaser.Geom.Rectangle.Contains)
+        .on('pointerdown', () => this.tutorialContinue());
+    }
   }
 
   drawMenu(): void {
-    addText(this, 390, 150, 'Drop. Merge. Bloom.', 25, MUTED);
-    this.button('PLAY', 390, 520, 420, 110, () => this.goto('map'), 'play');
-    this.button('Daily Challenge', 390, 660, 420, 110, () => this.goto('daily'), 'daily', '#75c9f5');
-    this.button('Garden / Album', 390, 800, 420, 110, () => this.goto('album'), 'album', '#b993f5');
-    this.button(this.soundEnabled ? 'Sound: On' : 'Sound: Off', 390, 940, 320, 88, () => {
+    if(this.textures.exists(ART.logo)) this.add.image(390,540,ART.logo).setDisplaySize(720,900);
+    this.button('PLAY', 390, 1120, 420, 100, () => this.goto('map'), 'play');
+    this.button('DAILY CHALLENGE', 390, 1240, 420, 100, () => this.goto('daily'), 'daily', '#75c9f5');
+    this.button('GARDEN / ALBUM', 390, 1360, 420, 100, () => this.goto('album'), 'album', '#b993f5');
+    this.button('HOW TO PLAY', 390, 1480, 280, 82, () => this.startLevel(1,true,true), 'howto', '#70cda9');
+    this.button(this.soundEnabled ? 'SOUND ON' : 'SOUND OFF', 120, 1480, 170, 82, () => {
       this.soundEnabled = !this.soundEnabled;
       write('sound', this.soundEnabled);
       this.draw();
     }, 'mute', '#ffd1a8');
-    addText(this, 390, 1060, 'Privacy', 18, MUTED)
+    addText(this, 390, 1600, 'Privacy', 18, MUTED)
       .setInteractive(new Phaser.Geom.Rectangle(-80, -20, 160, 40), Phaser.Geom.Rectangle.Contains)
       .on('pointerdown', () => window.open('./privacy.html', '_self'));
-    this.buttons.privacy = { x: 310, y: 1040, w: 160, h: 40 };
+    this.buttons.privacy = { x: 310, y: 1580, w: 160, h: 40 };
   }
 
   drawMap(): void {
-    addText(this, 390, 155, 'Choose a bloom', 30);
+    if (!this.textures.exists(ART.map)) {
+      lazyArt(this, ART.map, () => { if (this.screen === 'map') this.draw(); });
+      addText(this, 390, 840, 'Loading the garden…', 26, MUTED);
+      this.button('BACK', 390, 1540, 300, 88, () => this.goto('menu'), 'back', '#ffd1a8');
+      return;
+    }
+    const viewTop = 120;
+    const viewH = 1320;
+    const maxScroll = Math.max(0, MAP_SIZE.height - viewH + 80);
+    this.mapScroll = Math.max(0, Math.min(maxScroll, this.mapScroll));
+    const world = this.add.container(0, viewTop - this.mapScroll);
+    const mapImg = this.add.image(390, MAP_SIZE.height / 2, ART.map).setDisplaySize(MAP_SIZE.width, MAP_SIZE.height);
+    world.add(mapImg);
+    const nextLevel = Array.from({ length: 30 }, (_, i) => i + 1).find((n) => unlocked(this.best, n) && (this.best[n - 1] ?? 0) === 0) ?? 1;
     for (let index = 0; index < 30; index += 1) {
-      const column = index % 5;
-      const row = Math.floor(index / 5);
-      const x = 95 + column * 148;
-      const y = 270 + row * 180;
+      const node = MAP_NODES[index]!;
+      const x = node.x * MAP_SIZE.width;
+      const y = node.y * MAP_SIZE.height;
       const level = index + 1;
       const open = unlocked(this.best, level);
       const boss = [5, 10, 15, 20, 25, 30].includes(level);
       const starsEarned = this.best[index] ?? 0;
-      const label = boss
-        ? `${level}\nBOSS\n${'★'.repeat(starsEarned) || ' '}`
-        : `${level}\n${'★'.repeat(starsEarned) || (open ? ' ' : '🔒')}`;
-      this.button(label, x, y, 124, 112, () => {
-        if (!open) return;
-        this.levelNo = level;
-        this.goto('goal');
-      }, `map${level}`, open ? (boss ? '#ff8fab' : '#ffd45e') : '#ddd5df');
+      const r = boss ? 44 : 34;
+      const g = this.add.graphics();
+      g.fillStyle(open ? (boss ? 0xff8fab : 0xfff8f0) : 0xd9d0d6, open ? 1 : 0.75);
+      g.fillCircle(x, y, r);
+      g.lineStyle(boss ? 7 : 5, boss ? 0xe8bf59 : 0xffffff, 1);
+      g.strokeCircle(x, y, r);
+      world.add(g);
+      if (boss) {
+        const crown = this.add.image(x, y - r - 8, ART.star).setDisplaySize(28, 28);
+        world.add(crown);
+      }
+      const label = this.add.text(x, y - (starsEarned || !open ? 8 : 0), String(level), {
+        fontFamily: '-apple-system, "SF Pro Rounded", system-ui, sans-serif',
+        fontSize: boss ? '22px' : '20px', fontStyle: 'bold', color: '#59465b',
+      }).setOrigin(0.5);
+      world.add(label);
+      for (let s = 0; s < 3; s += 1) {
+        const key = s < starsEarned ? ART.star : ART.emptyStar;
+        if (this.textures.exists(key)) {
+          world.add(this.add.image(x + (s - 1) * 18, y + 18, key).setDisplaySize(16, 16));
+        }
+      }
+      if (level === nextLevel && this.textures.exists('flower-1')) {
+        const hop = this.add.image(x, y - r - 28, 'flower-1').setDisplaySize(56, 56);
+        world.add(hop);
+        this.tweens.add({ targets: hop, y: y - r - 42, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+      }
+      const zone = this.add.zone(x, y, r * 2.2, r * 2.2).setInteractive();
+      world.add(zone);
+      if (open) zone.on('pointerdown', () => { this.levelNo = level; this.goto('goal'); });
+      this.buttons[`map${level}`] = { x: x - r, y: viewTop - this.mapScroll + y - r, w: r * 2, h: r * 2 };
     }
-    this.button('BACK', 390, 1540, 300, 88, () => this.goto('menu'), 'back', '#ffd1a8');
+    const maskG = this.add.graphics().setVisible(false);
+    maskG.fillRect(0, viewTop, 780, viewH);
+    world.setMask(maskG.createGeometryMask());
+    mapImg.setInteractive();
+    let lastY: number | null = null;
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (pointer.y > viewTop && pointer.y < viewTop + viewH) lastY = pointer.y;
+    });
+    this.input.on('pointerup', () => { lastY = null; });
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (lastY === null || !pointer.isDown) return;
+      this.mapScroll = Math.max(0, Math.min(maxScroll, this.mapScroll - (pointer.y - lastY)));
+      lastY = pointer.y;
+      world.y = viewTop - this.mapScroll;
+    });
+    this.button('DAILY', 150, 1548, 200, 86, () => this.goto('daily'), 'daily', '#75c9f5');
+    this.button('BACK', 390, 1548, 200, 86, () => this.goto('menu'), 'back', '#ffd1a8');
+    this.button('ALBUM', 630, 1548, 200, 86, () => this.goto('album'), 'album', '#b993f5');
   }
 
   drawGoal(): void {
     const level = makeLevel(this.levelNo);
-    addText(this, 390, 260, `LEVEL ${level.n}${level.boss ? '  •  BOSS' : ''}`, 38);
-    addText(this, 390, 420, this.goalText(level), 28, INK, { wordWrap: { width: 620 } });
-    addText(
-      this,
-      390,
-      560,
-      `${level.moves} moves\n3★ with ${level.threeStar} moves left  ·  2★ with ${level.twoStar} left`,
-      24,
-      MUTED,
-    );
-    this.button('PLAY', 390, 780, 400, 110, () => this.startLevel(this.levelNo), 'goalPlay');
-    this.button('BACK', 390, 920, 300, 88, () => this.goto('map'), 'back', '#ffd1a8');
+    addText(this, 390, 200, `LEVEL ${level.n}${level.boss ? '  •  BOSS' : ''}`, 38);
+    let y = 360;
+    for (const goal of level.goals) {
+      const icon = goalIconKey(goal.kind);
+      if (this.textures.exists(icon)) this.add.image(200, y, icon).setDisplaySize(96, 96);
+      addText(this, 470, y, goalSentence(goal), 26, INK, { wordWrap: { width: 420 } });
+      const have = goal.kind === 'make' ? (this.made[goal.level ?? 3] ?? 0)
+        : goal.kind === 'clear' ? this.cleared : this.score;
+      addText(this, 470, y + 36, `${have} / ${goal.target}`, 18, MUTED);
+      y += 140;
+    }
+    addText(this, 390, y + 20, `${level.moves} moves   ·   3★ with ${level.threeStar} left   ·   2★ with ${level.twoStar} left`, 20, MUTED, { wordWrap: { width: 640 } });
+    this.button('PLAY', 390, y + 160, 400, 110, () => this.startLevel(this.levelNo, true, this.levelNo <= 3 && !read('tutorialDone', false)), 'goalPlay');
+    this.button('BACK', 390, y + 300, 300, 88, () => this.goto('map'), 'back', '#ffd1a8');
   }
 
   drawDaily(): void {
     const goal = dailyGoal(today());
     this.dailyDate = today();
-    addText(this, 390, 260, 'DAILY CHALLENGE', 34);
-    addText(this, 390, 400, `Today: ${this.previewDailyGoal(goal)}`, 26, INK, { wordWrap: { width: 620 } });
-    addText(this, 390, 500, `Streak: ${read<number>('streak', 0)} day${read<number>('streak', 0) === 1 ? '' : 's'}`, 26, MUTED);
-    if (read('dailyDone', '') === today()) {
-      addText(this, 390, 560, 'Completed today', 22, '#70cda9');
-    }
-    this.button('PLAY TODAY', 390, 720, 420, 110, () => this.startDaily(), 'play');
-    this.button('BACK', 390, 860, 300, 88, () => this.goto('menu'), 'back', '#ffd1a8');
+    if (this.textures.exists(ART.dailyPose)) this.add.image(390, 360, ART.dailyPose).setDisplaySize(420, 300);
+    else lazyArt(this, ART.dailyPose, () => { if (this.screen === 'daily') this.draw(); });
+    addText(this, 390, 560, 'DAILY CHALLENGE', 34);
+    const icon = goalIconKey(goal.kind === 'combined' ? 'make' : goal.kind);
+    if (this.textures.exists(icon)) this.add.image(200, 680, icon).setDisplaySize(88, 88);
+    addText(this, 470, 668, this.previewDailyGoal(goal), 24, INK, { wordWrap: { width: 420 } });
+    addText(this, 390, 780, `Streak: ${read<number>('streak', 0)} day${read<number>('streak', 0) === 1 ? '' : 's'}`, 24, MUTED);
+    if (read('dailyDone', '') === today()) addText(this, 390, 830, 'Completed today', 22, '#70cda9');
+    this.button('PLAY TODAY', 390, 1000, 420, 110, () => this.startDaily(), 'play');
+    this.button('BACK', 390, 1140, 300, 88, () => this.goto('menu'), 'back', '#ffd1a8');
   }
 
   previewDailyGoal(goal: ReturnType<typeof dailyGoal>): string {
@@ -375,20 +527,38 @@ export class GameScene extends Phaser.Scene {
     return `Make ${goal.target} Lv.${goal.level} flowers AND clear ${goal.extra?.target ?? 0} obstacles`;
   }
 
+  drawGoalBar(y: number): void {
+    const goals = this.mode === 'campaign' ? makeLevel(this.levelNo).goals : (() => {
+      const daily = dailyGoal(this.dailyDate);
+      return daily.kind === 'combined'
+        ? [{ kind: 'make' as const, target: daily.target, level: daily.level }, { kind: 'clear' as const, target: daily.extra?.target ?? 0 }]
+        : [{ kind: daily.kind, target: daily.target, level: daily.level }];
+    })();
+    const width = 700 / Math.max(1, goals.length);
+    goals.forEach((goal, index) => {
+      const x = 40 + width * index + width / 2;
+      const icon = goalIconKey(goal.kind as 'make' | 'clear' | 'score');
+      if (this.textures.exists(icon)) this.add.image(x - width / 2 + 36, y, icon).setDisplaySize(52, 52);
+      const have = goal.kind === 'make' ? (this.made[goal.level ?? 3] ?? 0)
+        : goal.kind === 'clear' ? this.cleared : this.score;
+      addText(this, x + 20, y - 10, goalSentence(goal), 18, INK, { wordWrap: { width: width - 70 } });
+      addText(this, x + 20, y + 16, `${have} / ${goal.target}`, 16, MUTED);
+    });
+  }
+
   drawGame(): void {
-    addText(this, 390, 145, this.mode === 'daily' ? 'DAILY' : `LEVEL ${this.levelNo}`, 26, MUTED);
-    addText(this, 390, 200, `Moves  ${this.moves}      Score  ${this.score}`, 28);
-    addText(this, 390, 255, this.goalText(), 20, MUTED, { wordWrap: { width: 640 } });
-    addText(this, 390, 330, 'NEXT', 18, MUTED);
+    addText(this, 390, 118, this.mode === 'daily' ? 'DAILY' : `LEVEL ${this.levelNo}`, 24, MUTED);
+    addText(this, 390, 168, `Moves  ${this.moves}      Score  ${this.score}`, 26);
+    this.drawGoalBar(210);
+    addText(this, 390, 330, 'NEXT', 16, MUTED);
     addFlower(this, this.next[1] ? 350 : 390, 400, this.next[0] ?? 1, 36, this.skin);
     if (this.next[1]) addFlower(this, 430, 400, this.next[1], 30, this.skin);
 
     const { x, y, cell, columns, rows } = BOARD;
+    addBoardFrame(this);
     const well = this.add.graphics();
-    well.fillStyle(0xffffff, 0.72);
-    well.fillRoundedRect(x - 10, y - 10, cell * columns + 20, cell * rows + 20, 30);
-    well.lineStyle(4, 0xffd9e7, 1);
-    well.strokeRoundedRect(x - 10, y - 10, cell * columns + 20, cell * rows + 20, 30);
+    well.fillStyle(0xffffff, 0.82);
+    well.fillRoundedRect(x - 6, y - 6, cell * columns + 12, cell * rows + 12, 24);
 
     for (let row = 0; row < 9; row += 1) {
       for (let column = 0; column < 7; column += 1) {
@@ -439,15 +609,15 @@ export class GameScene extends Phaser.Scene {
     }
 
     const uses = this.dailyUses();
-    this.button(uses.undo > 0 ? `Undo\n${uses.undo} left` : 'Undo\nAd (soon)', 180, 1570, 200, 104, () => this.undo(), 'undo', '#ffd1a8');
-    this.button(uses.hammer > 0 ? `Hammer\n${uses.hammer} left` : 'Hammer\nAd (soon)', 390, 1570, 200, 104, () => this.useTool('hammer'), 'hammer', this.targeting ? '#ffd45e' : '#b5ead7');
-    this.button(uses.shuffle > 0 ? `Shuffle\n${uses.shuffle} left` : 'Shuffle\nAd (soon)', 600, 1570, 200, 104, () => this.useTool('shuffle'), 'shuffle', '#a8d8ff');
-    this.button('Ⅱ', 720, 130, 80, 80, () => this.goto('pause'), 'pause', '#ffd1a8');
-    this.button(this.soundEnabled ? 'SOUND' : 'MUTED', 60, 130, 96, 80, () => {
+    addIconButton(this, ART.undo, 160, 1568, 92, () => this.undo(), this.buttons, 'undo', uses.undo > 0 ? `${uses.undo} left` : 'soon');
+    addIconButton(this, ART.hammer, 390, 1568, 92, () => this.useTool('hammer'), this.buttons, 'hammer', uses.hammer > 0 ? `${uses.hammer} left` : 'soon');
+    addIconButton(this, ART.shuffle, 620, 1568, 92, () => this.useTool('shuffle'), this.buttons, 'shuffle', uses.shuffle > 0 ? `${uses.shuffle} left` : 'soon');
+    addIconButton(this, ART.pause, 720, 118, 76, () => this.goto('pause'), this.buttons, 'pause');
+    addIconButton(this, this.soundEnabled ? ART.sound : ART.muted, 60, 118, 76, () => {
       this.soundEnabled = !this.soundEnabled;
       write('sound', this.soundEnabled);
       this.draw();
-    }, 'mute', '#ffd1a8');
+    }, this.buttons, 'mute');
 
     if (this.fx.lastText) {
       const label = addText(this, 390, 505, this.fx.lastText, 46, '#ff8fab').setDepth(20);
@@ -486,47 +656,55 @@ export class GameScene extends Phaser.Scene {
       else this.startLevel(this.levelNo);
     }, 'retry', '#ffd1a8');
     this.button('MAP / MENU', 390, 800, 400, 110, () => this.goto(this.mode === 'daily' ? 'menu' : 'map'), 'map', '#75c9f5');
+    if (this.mode === 'campaign') {
+      this.button('HOW TO PLAY', 390, 940, 400, 100, () => this.startLevel(1, true, true), 'howto', '#70cda9');
+    }
   }
 
   drawResult(): void {
     const success = this.screen === 'clear';
-    addText(this, 390, 280, success ? 'A lovely bloom!' : this.failReason, 42);
+    const pose = success ? ART.clearPose : ART.failPose;
+    if (this.textures.exists(pose)) this.add.image(390, 420, pose).setDisplaySize(520, 360);
+    else lazyArt(this, pose, () => { if (this.screen === 'clear' || this.screen === 'fail') this.draw(); });
+    addText(this, 390, 200, success ? 'A lovely bloom!' : this.failReason, 36);
     if (success) {
       if (this.mode !== 'daily') {
-        addText(this, 390, 390, '★'.repeat(this.starCount()) || '★', 56, '#e8bf59');
+        addText(this, 390, 640, '★'.repeat(this.starCount()) || '★', 56, '#e8bf59');
       } else {
-        addText(this, 390, 390, 'Daily complete!', 28, MUTED);
+        addText(this, 390, 640, 'Daily complete!', 28, MUTED);
       }
-      addText(this, 390, 460, `Score ${this.score}`, 28, MUTED);
+      addText(this, 390, 710, `Score ${this.score}`, 28, MUTED);
     } else {
-      addText(this, 390, 420, 'Try a different path and bloom again.', 24, MUTED, { wordWrap: { width: 620 } });
+      addText(this, 390, 680, 'Try a different path and bloom again.', 24, MUTED, { wordWrap: { width: 620 } });
     }
     if (success && this.celebration) {
-      addText(this, 390, 560, this.celebration, 28, '#ff8fab');
+      addText(this, 390, 760, this.celebration, 28, '#ff8fab');
       this.burstParticles(22, 390, 600);
     }
     if (success) {
-      this.button(this.mode === 'daily' ? 'MENU' : 'NEXT', 390, 760, 400, 110, () => {
+      this.button(this.mode === 'daily' ? 'MENU' : 'NEXT', 390, 980, 400, 110, () => {
         if (this.mode === 'daily') this.goto('menu');
         else if (this.levelNo < 30) this.startLevel(this.levelNo + 1);
         else this.goto('map');
       }, 'next');
-      this.button('MAP', 390, 900, 300, 88, () => this.goto(this.mode === 'daily' ? 'menu' : 'map'), 'map', '#ffd1a8');
+      this.button('MAP', 390, 1120, 300, 88, () => this.goto(this.mode === 'daily' ? 'menu' : 'map'), 'map', '#ffd1a8');
     } else {
-      this.button('RETRY', 390, 760, 400, 110, () => {
+      this.button('RETRY', 390, 980, 400, 110, () => {
         if (this.mode === 'daily') this.startDaily(this.dailyDate);
         else this.startLevel(this.levelNo);
       }, 'retry');
-      this.button('MAP', 390, 900, 300, 88, () => this.goto(this.mode === 'daily' ? 'menu' : 'map'), 'map', '#ffd1a8');
+      this.button('MAP', 390, 1120, 300, 88, () => this.goto(this.mode === 'daily' ? 'menu' : 'map'), 'map', '#ffd1a8');
     }
   }
 
   drawAlbum(): void {
     const names = ['Blush Bud', 'Peach Bell', 'Butter Bloom', 'Mint Daisy', 'Sky Tulip', 'Lilac Rose', 'Coral Peony', 'Golden Crown'];
-    addText(this, 390, 155, 'GARDEN ALBUM', 32);
+    if (this.textures.exists(ART.albumPose)) this.add.image(390, 250, ART.albumPose).setDisplaySize(360, 260);
+    else lazyArt(this, ART.albumPose, () => { if (this.screen === 'album') this.draw(); });
+    addText(this, 390, 80, 'GARDEN ALBUM', 32);
     for (let index = 0; index < 8; index += 1) {
       const x = 140 + (index % 4) * 170;
-      const y = 380 + Math.floor(index / 4) * 300;
+      const y = 560 + Math.floor(index / 4) * 280;
       const frame = this.add.graphics();
       frame.fillStyle(0xffffff, 0.85);
       frame.fillRoundedRect(x - 65, y - 80, 130, 200, 28);
@@ -537,35 +715,33 @@ export class GameScene extends Phaser.Scene {
       addText(this, x, y + 80, this.album[index] ? names[index]! : '???', 16);
     }
     if (hasRainbowGarden(this.album)) {
-      addText(this, 390, 1020, 'Garden complete!', 22, '#70cda9');
+      addText(this, 390, 1180, 'Garden complete!', 22, '#70cda9');
     }
-    this.button(`Skin: ${this.skin}`, 390, 1140, 400, 96, () => {
+    this.button(`Skin: ${this.skin}`, 390, 1280, 400, 96, () => {
       const skins = read<string[]>('skins', ['Classic']);
       const current = Math.max(0, skins.indexOf(this.skin));
       this.skin = skins[(current + 1) % skins.length] ?? 'Classic';
       write('skin', this.skin);
       this.draw();
     }, 'skin', '#d7c4ff');
-    this.button('BACK', 390, 1300, 300, 88, () => this.goto('menu'), 'back', '#ffd1a8');
+    this.button('BACK', 390, 1420, 300, 88, () => this.goto('menu'), 'back', '#ffd1a8');
   }
 
   goalText(level?: ReturnType<typeof makeLevel>): string {
-    if (level) {
-      return level.goals.map((goal) => {
-        if (goal.kind === 'make') {
-          const current = this.made[goal.level ?? 3] ?? 0;
-          return `Make ${goal.target} Lv.${goal.level ?? 3}  (${current}/${goal.target})`;
-        }
-        if (goal.kind === 'clear') return `Clear ${goal.target} obstacles  (${this.cleared}/${goal.target})`;
-        return `Score ${goal.target} points  (${this.score}/${goal.target})`;
-      }).join('\nAND\n');
+    const goals = level?.goals ?? (this.mode === 'campaign' ? makeLevel(this.levelNo).goals : null);
+    if (goals) {
+      return goals.map((goal) => {
+        const have = goal.kind === 'make' ? (this.made[goal.level ?? 3] ?? 0)
+          : goal.kind === 'clear' ? this.cleared : this.score;
+        return `${goalSentence(goal)} (${have}/${goal.target})`;
+      }).join('  ');
     }
-    if (this.mode === 'campaign') return this.goalText(makeLevel(this.levelNo));
-    const goal = dailyGoal(this.dailyDate);
-    if (goal.kind === 'make') return `Make ${goal.target} Lv.${goal.level}  (${this.made[goal.level] ?? 0}/${goal.target})`;
-    if (goal.kind === 'clear') return `Clear ${goal.target} obstacles  (${this.cleared}/${goal.target})`;
-    if (goal.kind === 'score') return `Score ${goal.target} points  (${this.score}/${goal.target})`;
-    return `Make ${goal.target} Lv.${goal.level}  (${this.made[goal.level] ?? 0}/${goal.target})\nAND\nClear ${goal.extra?.target ?? 0}  (${this.cleared}/${goal.extra?.target ?? 0})`;
+    const daily = dailyGoal(this.dailyDate);
+    if (daily.kind === 'combined') {
+      return `${goalSentence({ kind: 'make', target: daily.target, level: daily.level })} (${this.made[daily.level] ?? 0}/${daily.target})  ${goalSentence({ kind: 'clear', target: daily.extra?.target ?? 0 })} (${this.cleared}/${daily.extra?.target ?? 0})`;
+    }
+    const have = daily.kind === 'make' ? (this.made[daily.level] ?? 0) : daily.kind === 'clear' ? this.cleared : this.score;
+    return `${this.previewDailyGoal(daily)} (${have}/${daily.target})`;
   }
 
   done(): boolean {
@@ -585,6 +761,9 @@ export class GameScene extends Phaser.Scene {
 
   drop(column: number): void {
     if (this.screen !== 'game' || this.targeting || this.busy) return;
+    if (this.tutorialActive && this.levelNo === 1 && this.tutorialStep <= 2 && column !== 3) { this.cameras.main.shake(100,0.004); return; }
+    if (this.tutorialActive && this.levelNo === 2 && this.tutorialStep === 1 && column !== 2) { this.cameras.main.shake(100,0.004); return; }
+    if (this.tutorialActive && this.levelNo === 3 && this.tutorialStep === 1 && column !== 0) { this.cameras.main.shake(100,0.004); return; }
     const rows = landingRows(this.board, column, this.next.length);
     if (!rows) {
       this.cameras.main.shake(120, 0.006);
@@ -634,19 +813,80 @@ export class GameScene extends Phaser.Scene {
     }
     this.id += dropped.length;
     this.album = discoverFlowers(this.album, dropped);
-    const result = resolve(this.board, this.id - dropped.length);
-    this.score += result.score;
-    this.cleared += result.cleared;
-    this.recordCreated(result.created);
     this.moves -= 1;
-    this.fx.chain = result.chain;
-    this.playTone(Math.max(1, result.chain));
-    this.fx.lastText = result.chain > 1
-      ? (['', '', 'NICE', 'GREAT', 'AMAZING', 'BLOOM!'][Math.min(5, result.chain)] ?? 'BLOOM!')
-      : '';
-    this.fx.particles = result.created.length * 12;
+    const steps = resolveSteps(this.board, this.id - dropped.length);
+    const finish = (): void => {
+      this.score += steps.reduce((n,s)=>n+s.score,0);
+      this.cleared += steps.reduce((n,s)=>n+s.cleared,0);
+      this.recordCreated(steps.flatMap(s=>s.created));
+      this.fx.chain=steps.length ? steps[steps.length-1]!.chain : 0;
+      this.fx.lastText=steps.length>1 ? (['','', 'NICE','GREAT','AMAZING','BLOOM!'][Math.min(5,steps.length)] ?? 'BLOOM!') : '';
+      this.next = this.nextPiece(); this.saveAlbum(); this.busy=false;
+      if (this.tutorialActive) {
+        if (this.levelNo===1 && this.tutorialStep===1) this.tutorialContinue();
+        else if (this.levelNo===1 && this.tutorialStep===2) this.tutorialActive=false;
+        else if (this.levelNo===2) this.tutorialActive=false;
+        else if (this.levelNo===3 && this.tutorialStep===1) this.tutorialContinue();
+      }
+      this.draw();
+      if (this.done()) { this.clearLevel(); return; }
+      if (this.moves <= 0 || !canFit(this.board,this.next)) this.fail();
+    };
+    if (steps.length && !this.isInstant()) {
+      this.busy = true;
+      const animateStep = (i: number): void => {
+        const step = steps[i];
+        if (!step) { finish(); return; }
+        const dest = cellCenter(step.target[1], step.target[0]);
+        const movers = step.cells.map(([row, col]) => {
+          const from = cellCenter(col, row);
+          const img = addFlower(this, from.x, from.y, 1, 37, this.skin).setDepth(30);
+          this.tweens.add({
+            targets: img, x: dest.x, y: dest.y, scaleX: 0.2, scaleY: 0.2, duration: 220, ease: 'Cubic.In',
+            onComplete: () => img.destroy(),
+          });
+          return img;
+        });
+        this.playTone(step.chain);
+        const label = step.chain > 1 ? (['', '', 'NICE', 'GREAT', 'AMAZING', 'BLOOM!'][Math.min(5, step.chain)] ?? 'BLOOM!') : '';
+        if (label) {
+          const text = addText(this, dest.x, dest.y - 30, label, 42, '#ff8fab').setDepth(40);
+          text.setStroke('#ffffff', 10);
+          this.tweens.add({ targets: text, y: dest.y - 80, alpha: 0, duration: 700, ease: 'Cubic.Out', onComplete: () => text.destroy() });
+        }
+        this.burstParticles(18, dest.x, dest.y);
+        this.time.delayedCall(230, () => {
+          movers.forEach((img) => img.destroy());
+          this.board = cloneBoard(step.board);
+          this.fx.chain = step.chain;
+          this.fx.lastText = label;
+          this.draw();
+          const grown = step.created[0] ?? 1;
+          const pop = addFlower(this, dest.x, dest.y, grown, 37, this.skin).setDepth(31);
+          pop.setScale(0.2);
+          this.tweens.add({
+            targets: pop, scaleX: 1.22, scaleY: 0.82, duration: 90, yoyo: true, ease: 'Back.Out',
+            onComplete: () => pop.destroy(),
+          });
+          this.time.delayedCall(280, () => animateStep(i + 1));
+        });
+      };
+      animateStep(0);
+      return;
+    }
+
+    for(const step of steps){this.score+=step.score;this.cleared+=step.cleared;this.recordCreated(step.created);this.playTone(step.chain);}
+    this.fx.chain=steps.length?steps[steps.length-1]!.chain:0;
+    this.fx.lastText=steps.length>1?(['','', 'NICE','GREAT','AMAZING','BLOOM!'][Math.min(5,steps.length)]??'BLOOM!'):'';
+    this.fx.particles=steps.length*12;
     this.next = this.nextPiece();
     this.saveAlbum();
+    if (this.tutorialActive) {
+      if (this.levelNo===1 && this.tutorialStep===1) this.tutorialContinue();
+      else if (this.levelNo===1 && this.tutorialStep===2) this.tutorialActive=false;
+      else if (this.levelNo===2) this.tutorialActive=false;
+      else if (this.levelNo===3 && this.tutorialStep===1) this.tutorialContinue();
+    }
     this.draw();
     if (this.done()) {
       this.clearLevel();

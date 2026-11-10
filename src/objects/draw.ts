@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { ART } from './assets.ts';
 
 export const FONT = '-apple-system, "SF Pro Rounded", system-ui, sans-serif';
 export const INK = '#59465b';
@@ -36,6 +37,10 @@ export function addText(
 }
 
 export function paintBackground(scene: Phaser.Scene): void {
+  if (scene.textures.exists(ART.bg)) {
+    scene.add.image(390, 844, ART.bg).setDisplaySize(780, 1688).setDepth(-20);
+    return;
+  }
   const bg = scene.add.graphics().setDepth(-20);
   bg.fillGradientStyle(0xfff6fb, 0xfff6fb, 0xeef8ff, 0xeef8ff, 1);
   bg.fillRect(0, 0, 780, 1688);
@@ -135,10 +140,20 @@ export function addFlower(
   size: number,
   skin: string,
 ): Phaser.GameObjects.Image {
+  const artKey = `flower-${Math.max(1, Math.min(8, level))}`;
+  if (scene.textures.exists(artKey)) {
+    const image = scene.add.image(x, y, artKey).setDisplaySize(size * 2, size * 2);
+    if (skin === 'Dawn Petal') image.setTint(0xffd8df);
+    else if (skin === 'Night Bloom') image.setTint(0xc9b6ff);
+    else if (skin === 'Rainbow Garden') image.setTint([0xff8fab,0xffd45e,0x70cda9,0x75c9f5][(level-1)%4]!);
+    return image;
+  }
   return scene.add.image(x, y, flowerTexture(scene, level, skin, size));
 }
 
 export function drawStone(scene: Phaser.Scene, x: number, y: number, hp: number): void {
+  const key = hp > 1 ? ART.stone2 : ART.stone;
+  if (scene.textures.exists(key)) { scene.add.image(x,y,key).setDisplaySize(72,72); return; }
   const graphics = scene.add.graphics();
   const radius = hp > 1 ? 34 : 30;
   graphics.fillStyle(0x855875, 0.18);
@@ -160,6 +175,7 @@ export function drawStone(scene: Phaser.Scene, x: number, y: number, hp: number)
 }
 
 export function drawVine(scene: Phaser.Scene, x: number, y: number, size: number): void {
+  if (scene.textures.exists(ART.vine)) { scene.add.image(x,y,ART.vine).setDisplaySize(size*2.2,size*2.2); return; }
   const graphics = scene.add.graphics();
   graphics.lineStyle(5, 0x70cda9, 0.95);
   graphics.strokeCircle(x, y, size * 0.86);
@@ -212,4 +228,50 @@ export function cellCenter(column: number, row: number): { x: number; y: number 
     x: BOARD.x + column * BOARD.cell + BOARD.cell / 2,
     y: BOARD.y + row * BOARD.cell + BOARD.cell / 2,
   };
+}
+
+export function goalIconKey(kind: 'make' | 'clear' | 'score'): string {
+  return kind === 'make' ? ART.goalMake : kind === 'clear' ? ART.goalClear : ART.goalScore;
+}
+
+export function goalSentence(goal: { kind: string; target: number; level?: number }): string {
+  if (goal.kind === 'make') {
+    const n = goal.target;
+    const lv = goal.level ?? 3;
+    return n === 1 ? `Make 1 Level ${lv} flower.` : `Make ${n} Level ${lv} flowers.`;
+  }
+  if (goal.kind === 'clear') return `Clear ${goal.target} stones or vines.`;
+  return `Score ${goal.target} points.`;
+}
+
+export function addIconButton(
+  scene: Phaser.Scene,
+  texture: string,
+  x: number,
+  y: number,
+  size: number,
+  onClick: () => void,
+  buttons: Record<string, { x: number; y: number; w: number; h: number }>,
+  key: string,
+  caption = '',
+): void {
+  if (scene.textures.exists(texture)) {
+    scene.add.image(x, y, texture).setDisplaySize(size, size);
+  } else {
+    scene.add.circle(x, y, size / 2, 0xffd1a8);
+  }
+  if (caption) addText(scene, x, y + size * 0.52, caption, 16, INK);
+  const hit = Math.max(size, 88);
+  const rect = { x: x - hit / 2, y: y - hit / 2, w: hit, h: hit + (caption ? 22 : 0) };
+  buttons[key] = rect;
+  scene.add.zone(rect.x, rect.y, rect.w, rect.h)
+    .setOrigin(0)
+    .setInteractive(new Phaser.Geom.Rectangle(0, 0, rect.w, rect.h), Phaser.Geom.Rectangle.Contains)
+    .on('pointerdown', onClick);
+}
+
+export function addBoardFrame(scene: Phaser.Scene): void {
+  if (!scene.textures.exists(ART.frame)) return;
+  // Logical board is 700x900 at (40, 560). The art has a thick wooden border.
+  scene.add.image(390, 1010, ART.frame).setDisplaySize(780, 1040).setDepth(-1);
 }
