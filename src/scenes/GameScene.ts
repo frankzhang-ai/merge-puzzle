@@ -226,10 +226,17 @@ export class GameScene extends Phaser.Scene {
     this.tutorialActive = keepTeaching && levelNumber <= 3;
     this.tutorialStep = this.tutorialActive ? 1 : 0;
     this.tutorialHint = '';
+    this.fx = { lastText: '', chain: 0, particles: 0, lastSound: '' };
     this.rng = new RNG(levelNumber * 100003);
     this.next = this.nextPiece();
     if (this.tutorialActive) {
-      if (levelNumber === 1) { this.board = emptyBoard(); this.board[8]![3] = {kind:'flower',level:1}; this.next=[1]; this.setTutorialHint('Tap a column to drop the flower.'); }
+      if (levelNumber === 1) {
+        this.board = emptyBoard();
+        this.board[8]![2] = { kind: 'flower', level: 2 };
+        this.board[8]![4] = { kind: 'flower', level: 2 };
+        this.next = [1];
+        this.setTutorialHint('Tap a column to drop the flower.');
+      }
       if (levelNumber === 2) {
         this.board=emptyBoard(); this.board[8]![0]={kind:'flower',level:3}; this.board[8]![1]={kind:'flower',level:3};
         this.board[8]![3]={kind:'flower',level:2}; this.board[8]![4]={kind:'flower',level:2}; this.next=[2];
@@ -259,7 +266,7 @@ export class GameScene extends Phaser.Scene {
   }
   tutorialContinue(): void {
     if (!this.tutorialActive || this.busy) return;
-    if (this.levelNo===1 && this.tutorialStep===1) { this.tutorialStep=2; this.setTutorialHint('Match 3 same-level flowers that touch to merge them.'); }
+    if (this.levelNo===1 && this.tutorialStep===1) { this.tutorialStep=2; this.next=[2]; this.setTutorialHint('Match 3 same flowers to merge them.'); }
     else if (this.levelNo===3 && this.tutorialStep===1) { this.tutorialStep=2; this.setTutorialHint('Vines unwrap when a merge happens beside them.'); }
     else if (this.levelNo===3 && this.tutorialStep>=2 && this.tutorialStep<5) {
       this.tutorialStep++;
@@ -352,32 +359,38 @@ export class GameScene extends Phaser.Scene {
   }
 
   drawTutorial(): void {
-    const column = this.levelNo === 1 ? 3 : this.levelNo === 2 ? 2 : this.tutorialStep === 1 ? 0 : -1;
+    const column = this.levelNo === 1 ? (this.tutorialStep === 1 ? 1 : 3)
+      : this.levelNo === 2 ? 2
+        : this.tutorialStep === 1 ? 0 : -1;
     const highlight = column >= 0 ? this.buttons[`column${column}`] : (
       this.tutorialStep === 3 ? this.buttons.undo
         : this.tutorialStep === 4 ? this.buttons.hammer
           : this.tutorialStep === 5 ? this.buttons.shuffle : undefined
     );
     const shade = this.add.graphics().setDepth(90);
-    shade.fillStyle(0x241c2d, 0.55);
-    shade.fillRect(0, 0, 780, 1688);
+    shade.fillStyle(0x241c2d, 0.48);
     if (highlight) {
-      shade.setBlendMode(Phaser.BlendModes.NORMAL);
-      const g = this.add.graphics().setDepth(91);
-      g.fillStyle(0x000000, 1);
-      g.fillRoundedRect(highlight.x + 4, highlight.y + 4, highlight.w - 8, highlight.h - 8, 20);
-      const mask = g.createGeometryMask();
-      mask.invertAlpha = true;
-      shade.setMask(mask);
+      const hx = highlight.x, hy = highlight.y, hw = highlight.w, hh = highlight.h;
+      shade.fillRect(0, 0, 780, hy);
+      shade.fillRect(0, hy + hh, 780, 1688 - hy - hh);
+      shade.fillRect(0, hy, hx, hh);
+      shade.fillRect(hx + hw, hy, 780 - hx - hw, hh);
       const ring = this.add.graphics().setDepth(92);
       ring.lineStyle(8, 0xffd45e, 1);
-      ring.strokeRoundedRect(highlight.x + 6, highlight.y + 6, highlight.w - 12, highlight.h - 12, 22);
-      const hx = highlight.x + highlight.w / 2;
-      const hy = Math.min(highlight.y + highlight.h - 20, 1500);
-      const hand = this.add.image(hx + 36, hy, ART.hand).setDisplaySize(96, 96).setDepth(93);
-      this.tweens.add({ targets: hand, y: hy + 18, duration: 450, yoyo: true, repeat: -1 });
+      ring.strokeRoundedRect(hx + 6, hy + 6, hw - 12, hh - 12, 22);
+      const handX = hx + hw / 2 + 36;
+      const handY = Math.min(hy + hh - 24, 1500);
+      const hand = this.add.image(handX, handY, ART.hand).setDisplaySize(96, 96).setDepth(93);
+      this.tweens.add({ targets: hand, y: handY + 18, duration: 450, yoyo: true, repeat: -1 });
+    } else {
+      shade.fillRect(0, 0, 780, 1688);
     }
-    addText(this, 390, 118, this.tutorialHint, 26, '#ffffff', { wordWrap: { width: 520 } }).setDepth(94);
+    const banner = this.add.graphics().setDepth(94);
+    banner.fillStyle(0xffffff, 0.95);
+    banner.fillRoundedRect(70, 470, 640, 80, 28);
+    banner.lineStyle(4, 0xffd45e, 1);
+    banner.strokeRoundedRect(70, 470, 640, 80, 28);
+    addText(this, 390, 510, this.tutorialHint, 24, INK, { wordWrap: { width: 600 } }).setDepth(95);
     const skip = this.add.container(650, 92).setDepth(96);
     const skipBg = this.add.graphics();
     skipBg.fillStyle(0xffd45e, 1);
@@ -761,7 +774,8 @@ export class GameScene extends Phaser.Scene {
 
   drop(column: number): void {
     if (this.screen !== 'game' || this.targeting || this.busy) return;
-    if (this.tutorialActive && this.levelNo === 1 && this.tutorialStep <= 2 && column !== 3) { this.cameras.main.shake(100,0.004); return; }
+    if (this.tutorialActive && this.levelNo === 1 && this.tutorialStep === 1 && column !== 1) { this.cameras.main.shake(100,0.004); return; }
+    if (this.tutorialActive && this.levelNo === 1 && this.tutorialStep === 2 && column !== 3) { this.cameras.main.shake(100,0.004); return; }
     if (this.tutorialActive && this.levelNo === 2 && this.tutorialStep === 1 && column !== 2) { this.cameras.main.shake(100,0.004); return; }
     if (this.tutorialActive && this.levelNo === 3 && this.tutorialStep === 1 && column !== 0) { this.cameras.main.shake(100,0.004); return; }
     const rows = landingRows(this.board, column, this.next.length);
