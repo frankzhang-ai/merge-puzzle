@@ -1,0 +1,6 @@
+const CACHE='mergebloom-70cbf4fab504';
+const PREFIX='mergebloom-';
+const ASSETS=["./","./index.html","./manifest.webmanifest","./privacy.html","./favicon.ico","./icons/icon-180.png","./icons/icon-192.png","./icons/icon-512.png","./icons/maskable-192.png","./icons/maskable-512.png","./icons/favicon-32.png","./icons/icon.svg","./icons/splash-512.png","./icons/splash-1170x2532.png","./icons/splash-1290x2796.png","./icons/splash-750x1334.png","./assets/index-CWTyjLxf.js","./assets/index-BKFSYLD1.css"];
+self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS))));
+self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith(PREFIX)&&key!==CACHE).map(key=>caches.delete(key))))));
+self.addEventListener('fetch',event=>{if(event.request.method==='GET')event.respondWith(caches.match(event.request).then(response=>response||fetch(event.request).then(result=>{const copy=result.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));return result;})));});
