@@ -409,20 +409,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   drawMenu(): void {
-    if(this.textures.exists(ART.logo)) this.add.image(390,540,ART.logo).setDisplaySize(720,900);
-    this.button('PLAY', 390, 1120, 420, 100, () => this.goto('map'), 'play');
-    this.button('DAILY CHALLENGE', 390, 1240, 420, 100, () => this.goto('daily'), 'daily', '#75c9f5');
-    this.button('GARDEN / ALBUM', 390, 1360, 420, 100, () => this.goto('album'), 'album', '#b993f5');
-    this.button('HOW TO PLAY', 390, 1480, 280, 82, () => this.startLevel(1,true,true), 'howto', '#70cda9');
-    this.button(this.soundEnabled ? 'SOUND ON' : 'SOUND OFF', 120, 1480, 170, 82, () => {
+    if (this.textures.exists(ART.logo)) this.add.image(390, 420, ART.logo).setDisplaySize(700, 688);
+    this.button('PLAY', 390, 1000, 420, 100, () => this.goto('map'), 'play');
+    this.button('DAILY CHALLENGE', 390, 1130, 420, 100, () => this.goto('daily'), 'daily', '#75c9f5');
+    this.button('GARDEN / ALBUM', 390, 1260, 420, 100, () => this.goto('album'), 'album', '#b993f5');
+    this.button('HOW TO PLAY', 390, 1410, 280, 82, () => this.startLevel(1,true,true), 'howto', '#70cda9');
+    this.button(this.soundEnabled ? 'SOUND ON' : 'SOUND OFF', 120, 1410, 170, 82, () => {
       this.soundEnabled = !this.soundEnabled;
       write('sound', this.soundEnabled);
       this.draw();
     }, 'mute', '#ffd1a8');
-    addText(this, 390, 1600, 'Privacy', 18, MUTED)
+    addText(this, 390, 1560, 'Privacy', 18, MUTED)
       .setInteractive(new Phaser.Geom.Rectangle(-80, -20, 160, 40), Phaser.Geom.Rectangle.Contains)
       .on('pointerdown', () => window.open('./privacy.html', '_self'));
-    this.buttons.privacy = { x: 310, y: 1580, w: 160, h: 40 };
+    this.buttons.privacy = { x: 310, y: 1540, w: 160, h: 40 };
   }
 
   drawMap(): void {
@@ -464,10 +464,12 @@ export class GameScene extends Phaser.Scene {
         fontSize: boss ? '22px' : '20px', fontStyle: 'bold', color: '#59465b',
       }).setOrigin(0.5);
       world.add(label);
-      for (let s = 0; s < 3; s += 1) {
-        const key = s < starsEarned ? ART.star : ART.emptyStar;
-        if (this.textures.exists(key)) {
-          world.add(this.add.image(x + (s - 1) * 18, y + 18, key).setDisplaySize(16, 16));
+      if (open) {
+        for (let s = 0; s < 3; s += 1) {
+          const key = s < starsEarned ? ART.star : ART.emptyStar;
+          if (this.textures.exists(key)) {
+            world.add(this.add.image(x + (s - 1) * 18, y + 18, key).setDisplaySize(16, 16));
+          }
         }
       }
       if (level === nextLevel && this.textures.exists('flower-1')) {

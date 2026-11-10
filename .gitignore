@@ -1,12 +1,10 @@
 node_modules/
 dist/
+dist-preview2/
 screenshots/
+art-src/
+CODEX_TASK_*.md
 codex-*.log
 codex-last.txt
 codex-run.log
 .DS_Store
-dist-preview2/
-art-src/*.png
-art-src/*.log
-art-src/codex-*.txt
-art-src/raw/
