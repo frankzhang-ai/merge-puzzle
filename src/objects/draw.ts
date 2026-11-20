@@ -38,8 +38,9 @@ export function addText(
 
 export function paintBackground(scene: Phaser.Scene, view?: { x: number; y: number; w: number; h: number }): void {
   if (scene.textures.exists(ART.bg)) {
-    if (view) scene.add.image(view.x + view.w / 2, view.y + view.h / 2, ART.bg).setDisplaySize(view.w, view.h).setDepth(-21);
-    scene.add.image(390, 844, ART.bg).setDisplaySize(780, 1688).setDepth(-20);
+    // iOS full-bleed: one background stretched over the whole visible area (no seams, no side bars).
+    if (view) scene.add.image(view.x + view.w / 2, view.y + view.h / 2, ART.bg).setDisplaySize(view.w, view.h).setDepth(-20);
+    else scene.add.image(390, 844, ART.bg).setDisplaySize(780, 1688).setDepth(-20);
     return;
   }
   const bg = scene.add.graphics().setDepth(-20);
