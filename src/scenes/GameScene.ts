@@ -567,22 +567,6 @@ export class GameScene extends Phaser.Scene {
     world.add(this.add.image(390, worldH / 2, ART.map).setDisplaySize(MAP_SIZE.width, worldH));
     const dragged = (pointer: Phaser.Input.Pointer): boolean => Math.abs(pointer.y - pointer.downY) > 16 || Math.abs(pointer.x - pointer.downX) > 16;
 
-    for (const [boss, pos] of Object.entries(MAP_GIFTS)) {
-      const cleared = (this.best[Number(boss) - 1] ?? 0) > 0;
-      const x = pos.x * MAP_SIZE.width - (MAP_SIZE.width - 780) / 2;
-      const y = pos.y * MAP_SIZE.height;
-      const chest = drawChest(this, x, y, 54, cleared);
-      if (!cleared) chest.setAlpha(0.6);
-      world.add(chest);
-      if (!cleared) world.add(drawLock(this, x + 30, y - 26, 26, 3));
-      const zone = this.add.zone(x, y, 110, 110).setInteractive();
-      zone.on('pointerup', (pointer: Phaser.Input.Pointer) => {
-        if (dragged(pointer)) return;
-        this.toast(cleared ? 'Gift collected! A new bloom awaits.' : `Beat boss level ${boss} to open this gift!`, 1440);
-      });
-      world.add(zone);
-    }
-
     for (let index = 0; index < 30; index += 1) {
       const { x, y } = this.nodeXY(index);
       const level = index + 1;
@@ -640,26 +624,67 @@ export class GameScene extends Phaser.Scene {
       this.buttons[`map${level}`] = { x: x - r, y: y - this.mapScroll - r, w: r * 2, h: r * 2 };
     }
 
+    // Spare baked path circles: decorate with a small flower so they never read as empty levels.
+    for (const pos of Object.values(MAP_GIFTS)) {
+      const x = pos.x * MAP_SIZE.width - (MAP_SIZE.width - 780) / 2;
+      const y = pos.y * MAP_SIZE.height;
+      if (this.textures.exists('flower-1')) world.add(this.add.image(x, y, 'flower-1').setDisplaySize(58, 58).setAlpha(0.9));
+    }
+
+    // Gift chest beside every 5th (boss) level.
+    const chestSpots: Array<{ x: number; y: number }> = [];
+    for (const boss of [5, 10, 15, 20, 25, 30]) {
+      const cleared = (this.best[boss - 1] ?? 0) > 0;
+      const b = this.nodeXY(boss - 1);
+      const x = b.x + (b.x > 390 ? -84 : 84);
+      const y = b.y - 62;
+      chestSpots.push({ x, y });
+      const chest = drawChest(this, x, y, 50, cleared);
+      if (!cleared) chest.setAlpha(0.75);
+      world.add(chest);
+      if (!cleared) world.add(drawLock(this, x + 26, y - 24, 24, 3));
+      const zone = this.add.zone(x, y, 96, 96).setInteractive();
+      zone.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+        if (dragged(pointer)) return;
+        this.toast(cleared ? 'Gift collected! A new bloom awaits.' : `Beat level ${boss} to open this gift!`, 1440);
+      });
+      world.add(zone);
+    }
+
     // Character standing beside the current level with a speech bubble.
     const cur = this.nodeXY(current - 1);
-    const left = cur.x > 390;
-    const charX = left ? cur.x - 100 : cur.x + 100;
+    const others = [...Array.from({ length: 30 }, (_, i) => this.nodeXY(i)).filter((_, i) => i !== current - 1), ...chestSpots];
+    const candidates = [
+      { x: cur.x - 104, y: cur.y - 10 }, { x: cur.x + 104, y: cur.y - 10 },
+      { x: cur.x, y: cur.y + 112 }, { x: cur.x, y: cur.y - 112 },
+      { x: cur.x - 84, y: cur.y + 84 }, { x: cur.x + 84, y: cur.y + 84 },
+    ].filter((c) => c.x > 70 && c.x < 710);
+    let best = candidates[0]!;
+    let bestScore = -1;
+    for (const c of candidates) {
+      const score = Math.min(...others.map((o) => Math.hypot(o.x - c.x, o.y - c.y)));
+      if (score > bestScore) { bestScore = score; best = c; }
+    }
+    const charX = best.x;
+    const charY = best.y;
     if (this.textures.exists('flower-3')) {
-      const hero = this.add.image(charX, cur.y - 14, 'flower-3').setDisplaySize(124, 124);
+      const hero = this.add.image(charX, charY, 'flower-3').setDisplaySize(112, 112);
       world.add(hero);
-      this.tweens.add({ targets: hero, y: cur.y - 34, duration: 520, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+      this.tweens.add({ targets: hero, y: charY - 16, duration: 520, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
     }
     const bubbleX = Math.max(190, Math.min(590, charX));
     const bubbleObjs = this.add.container(0, 0);
     world.add(bubbleObjs);
     const bub = this.add.graphics();
-    const bw = 330, bh = 66, by = cur.y - 118;
+    const below = charY > cur.y + 40;
+    const bw = 330, bh = 66, by = below ? charY + 96 : charY - 104;
     bub.fillStyle(0xffffff, 0.97);
     bub.fillRoundedRect(bubbleX - bw / 2, by - bh / 2, bw, bh, 26);
     bub.lineStyle(4, 0xffcdda, 1);
     bub.strokeRoundedRect(bubbleX - bw / 2, by - bh / 2, bw, bh, 26);
     bub.fillStyle(0xffffff, 0.97);
-    bub.fillTriangle(charX - 14, by + bh / 2 - 2, charX + 14, by + bh / 2 - 2, charX, by + bh / 2 + 20);
+    if (below) bub.fillTriangle(charX - 14, by - bh / 2 + 2, charX + 14, by - bh / 2 + 2, charX, by - bh / 2 - 20);
+    else bub.fillTriangle(charX - 14, by + bh / 2 - 2, charX + 14, by + bh / 2 - 2, charX, by + bh / 2 + 20);
     bubbleObjs.add(bub);
     bubbleObjs.add(addText(this, bubbleX, by, `Level ${current} — let's go!`, 28));
 
