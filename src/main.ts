@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
 import { GameScene } from './scenes/GameScene.ts';
 import './style.css';
+import { IS_NATIVE_BUILD } from './config/runtime.ts';
+
+if (IS_NATIVE_BUILD) document.documentElement.classList.add('native');
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -9,7 +12,8 @@ const config: Phaser.Types.Core.GameConfig = {
   backgroundColor: '#fff6fb',
   parent: 'game',
   antialias: true,
-  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+  // iOS app: EXPAND fills the whole screen (no side bars); GameScene.fitCamera keeps the 780x1688 layout inside the safe area.
+  scale: { mode: IS_NATIVE_BUILD ? Phaser.Scale.EXPAND : Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   input: { activePointers: 3 },
   scene: [GameScene],
 };
@@ -28,6 +32,6 @@ window.addEventListener('pointerdown', refreshBounds, { capture: true, passive: 
 window.addEventListener('resize', () => { window.setTimeout(() => game.scale.refresh(), 50); });
 window.addEventListener('orientationchange', () => { window.setTimeout(() => game.scale.refresh(), 300); });
 
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+if (import.meta.env.PROD && !IS_NATIVE_BUILD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => { void navigator.serviceWorker.register('./sw.js', { scope: './' }); });
 }

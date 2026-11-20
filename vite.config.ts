@@ -50,12 +50,15 @@ function serviceWorker(cachePrefix: string): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
+  const ios = mode === 'ios';
   const preview3 = mode === 'preview3' || mode === 'production';
-  const outDir = preview3 ? 'dist-preview3' : 'dist';
+  const outDir = ios ? 'native/www' : preview3 ? 'dist-preview3' : 'dist';
   const cachePrefix = CACHE_PREFIX;
   return {
     base: './',
-    plugins: [serviceWorker(cachePrefix)],
+    // The iOS app bundle (mode "ios") ships no service worker; native/scripts/copy-web.mjs strips the rest.
+    define: { __NATIVE__: JSON.stringify(ios) },
+    plugins: ios ? [] : [serviceWorker(cachePrefix)],
     build: {
       outDir,
       emptyOutDir: true,

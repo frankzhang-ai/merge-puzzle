@@ -38,3 +38,5 @@ body { font-family: -apple-system, "SF Pro Rounded", system-ui, sans-serif; }
 }
 #splash.gone { opacity: 0; pointer-events: none; }
 .dots { color: #ff8fab; letter-spacing: 14px; }
+/* iOS app: canvas covers the full screen; the scene keeps content inside the safe area. */
+html.native #game { padding: 0; }

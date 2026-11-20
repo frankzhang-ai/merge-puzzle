@@ -1,0 +1,10 @@
+{
+  "appId": "com.frankzhang.mergebloom",
+  "appName": "MERGE BLOOM",
+  "webDir": "www",
+  "backgroundColor": "#FFF6FB",
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": false
+  }
+}

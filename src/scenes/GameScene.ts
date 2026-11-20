@@ -19,6 +19,8 @@ import {
 } from '../systems/tutorial.ts';
 import { clearPrefixedStorage, read, write } from '../systems/storage.ts';
 import { track } from '../systems/analytics.ts';
+import { haptic, initNative, safeInsets } from '../systems/native.ts';
+import { IS_NATIVE_BUILD } from '../config/runtime.ts';
 import {
   BOARD, addBoardFrame, addBubble, addButton, addFlower, addIcon, addIconButton, addPill, addText, cellCenter,
   drawChest, drawGroundShadow, drawLock, drawStone, drawVine, goalIconKey, goalSentence, paintBackground, MUTED, INK,
@@ -100,6 +102,7 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.cameras.main.setBackgroundColor('#fff6fb');
     this.wireHook();
+    initNative(() => this.onBackground());
     const todayKey = today();
     if (read<string | null>('first', null) === null) write('first', todayKey);
     else if (read('first', todayKey) !== todayKey && read('lastReturn', '') !== todayKey) {
@@ -119,6 +122,35 @@ export class GameScene extends Phaser.Scene {
     });
     if (read('tutorialSeen', 0) < 1) this.startLevel(1, true, true);
     else this.draw();
+  }
+
+  /** iOS: app went to the background. Pause an active level, persist settings, silence audio. */
+  onBackground(): void {
+    write('sound', this.soundEnabled);
+    write('progress', this.best);
+    this.saveAlbum();
+    try { if (this.audioContext?.state === 'running') void this.audioContext.suspend(); } catch { /* ignore */ }
+    if (this.screen === 'game') this.goto('pause');
+  }
+
+  /** iOS only: fill the whole screen (EXPAND) and fit the 780x1688 layout inside the safe area. */
+  fitCamera(): { x: number; y: number; w: number; h: number } | undefined {
+    if (!IS_NATIVE_BUILD) return undefined;
+    const cam = this.cameras.main;
+    const W = this.scale.gameSize.width;
+    const H = this.scale.gameSize.height;
+    const unit = H / Math.max(1, window.innerHeight);
+    const inset = safeInsets();
+    const top = inset.top * unit;
+    const bottom = inset.bottom * unit;
+    const zoom = Math.min(W / 780, (H - top - bottom) / 1688);
+    cam.setSize(W, H);
+    cam.setZoom(zoom);
+    const cy = 844 - (top - bottom) / 2 / zoom;
+    cam.centerOn(390, cy);
+    const w = W / zoom + 4;
+    const h = H / zoom + 4;
+    return { x: 390 - w / 2, y: cy - h / 2, w, h };
   }
 
   wireHook(): void {
@@ -248,6 +280,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   playTone(chain: number): void {
+    haptic(chain > 1 ? 'combo' : 'merge');
     if (!this.soundEnabled || !this.audioContext) return;
     const context = this.audioContext;
     const oscillator = context.createOscillator();
@@ -435,7 +468,7 @@ export class GameScene extends Phaser.Scene {
     this.buttons = {};
     this.mapWorld = null;
     this.tutorialView = { highlight: false, gotIt: false };
-    paintBackground(this);
+    paintBackground(this, this.fitCamera());
     if (this.screen === 'map') lazyArt(this, ART.map);
     if (this.screen === 'clear') lazyArt(this, ART.clearPose);
     if (this.screen === 'fail') lazyArt(this, ART.failPose);
@@ -465,10 +498,10 @@ export class GameScene extends Phaser.Scene {
     shade.fillStyle(0x241c2d, 0.48);
     if (highlight) {
       const { x: hx, y: hy, w: hw, h: hh } = highlight;
-      shade.fillRect(0, 0, 780, hy);
-      shade.fillRect(0, hy + hh, 780, 1688 - hy - hh);
-      shade.fillRect(0, hy, hx, hh);
-      shade.fillRect(hx + hw, hy, 780 - hx - hw, hh);
+      shade.fillRect(-600, -600, 1980, hy + 600);
+      shade.fillRect(-600, hy + hh, 1980, 1688 - hy - hh + 600);
+      shade.fillRect(-600, hy, hx + 600, hh);
+      shade.fillRect(hx + hw, hy, 1380 - hx - hw, hh);
       const ring = this.add.graphics().setDepth(92);
       ring.lineStyle(8, 0xffd45e, 1);
       ring.strokeRoundedRect(hx + 6, hy + 6, hw - 12, hh - 12, 22);
@@ -478,7 +511,7 @@ export class GameScene extends Phaser.Scene {
       this.tweens.add({ targets: hand, y: handY + 18, duration: 450, yoyo: true, repeat: -1 });
       this.tutorialView.highlight = true;
     } else {
-      shade.fillRect(0, 0, 780, 1688);
+      shade.fillRect(-600, -600, 1980, 2888);
       // No target: swallow board taps; the visible "Got it" button is the only way on.
       this.add.zone(0, 180, 780, 1500).setOrigin(0).setDepth(94)
         .setInteractive(new Phaser.Geom.Rectangle(0, 0, 780, 1500), Phaser.Geom.Rectangle.Contains);
@@ -691,10 +724,12 @@ export class GameScene extends Phaser.Scene {
     // Bottom dock: soft gradient scrim + buttons, so the map shows no empty band.
     const scrim = this.add.graphics();
     scrim.fillGradientStyle(0xe8f6e0, 0xe8f6e0, 0xe8f6e0, 0xe8f6e0, 0, 0, 0.92, 0.92);
-    scrim.fillRect(0, 1480, 780, 208);
+    scrim.fillRect(-600, 1480, 1980, 208);
+    scrim.fillStyle(0xe8f6e0, 0.92);
+    scrim.fillRect(-600, 1688, 1980, 600);
     const top = this.add.graphics();
     top.fillGradientStyle(0xfff6fb, 0xfff6fb, 0xfff6fb, 0xfff6fb, 0.55, 0.55, 0, 0);
-    top.fillRect(0, 0, 780, 90);
+    top.fillRect(-600, 0, 1980, 90);
     this.button('DAILY', 150, 1600, 200, 86, () => this.goto('daily'), 'daily', '#75c9f5');
     this.button('BACK', 390, 1600, 200, 86, () => this.goto('menu'), 'back', '#ffd1a8');
     this.button('ALBUM', 630, 1600, 200, 86, () => this.goto('album'), 'album', '#b993f5');
@@ -1088,6 +1123,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.snapUndo = this.capture();
+    haptic('drop');
     if (this.isInstant()) {
       this.commitDrop(column);
       return;
@@ -1341,6 +1377,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   clearLevel(): void {
+    haptic('clear');
     this.inputQueue = [];
     this.endTutorial();
     this.resultInfo = { newFlowers: [], skinLine: '' };
@@ -1385,6 +1422,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   fail(): void {
+    haptic('fail');
     this.inputQueue = [];
     this.endTutorial();
     this.failReason = this.moves <= 0 ? 'No moves left' : 'Board full';

@@ -36,8 +36,9 @@ export function addText(
   }).setOrigin(0.5);
 }
 
-export function paintBackground(scene: Phaser.Scene): void {
+export function paintBackground(scene: Phaser.Scene, view?: { x: number; y: number; w: number; h: number }): void {
   if (scene.textures.exists(ART.bg)) {
+    if (view) scene.add.image(view.x + view.w / 2, view.y + view.h / 2, ART.bg).setDisplaySize(view.w, view.h).setDepth(-21);
     scene.add.image(390, 844, ART.bg).setDisplaySize(780, 1688).setDepth(-20);
     return;
   }

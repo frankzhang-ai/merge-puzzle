@@ -1,0 +1,163 @@
+name: iOS Mac bundle (archive + simulator check)
+# Builds the self-contained Xcode bundle Frank opens on his Mac, then proves it
+# on a CLEAN macOS runner: no checkout, no node, GitHub/npm blocked in /etc/hosts.
+# Never signs, never uploads anything to Apple, never touches main or gh-pages.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/ios-archive]
+permissions:
+  contents: read
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - working-directory: native
+        run: npm ci --no-audit --no-fund
+      - working-directory: native
+        run: bash scripts/make-ios-mac-bundle.sh "$RUNNER_TEMP/out"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MergeBloom-iOS-mac
+          path: ${{ runner.temp }}/out/MergeBloom-iOS-mac.zip
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-autoplay
+          path: native/ci/autoplay.js
+
+  verify:
+    needs: bundle
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      BUNDLE_ID: com.frankzhang.mergebloom
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: MergeBloom-iOS-mac, path: dl }
+      - uses: actions/download-artifact@v4
+        with: { name: ci-autoplay, path: ci }
+      - name: Unzip into a clean folder and cut off GitHub/npm (proves no package downloads)
+        run: |
+          mkdir -p "$RUNNER_TEMP/clean" && cd "$RUNNER_TEMP/clean" && unzip -q "$GITHUB_WORKSPACE/dl/MergeBloom-iOS-mac.zip"
+          ls -la MergeBloom-iOS MergeBloom-iOS/Vendor
+          sudo sh -c 'printf "0.0.0.0 github.com\n0.0.0.0 raw.githubusercontent.com\n0.0.0.0 objects.githubusercontent.com\n0.0.0.0 codeload.github.com\n0.0.0.0 registry.npmjs.org\n0.0.0.0 gc.zgo.at\n0.0.0.0 onesecond.goatcounter.com\n" >> /etc/hosts'
+          sudo dscacheutil -flushcache || true
+          rm -rf ~/Library/Caches/org.swift.swiftpm ~/Library/org.swift.swiftpm || true
+          xcodebuild -version
+      - name: Unsigned archive (Release, generic iOS device)
+        working-directory: ${{ runner.temp }}/clean/MergeBloom-iOS
+        run: |
+          set -o pipefail
+          xcodebuild -project App/App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/dd-archive" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" archive | tee "$RUNNER_TEMP/archive.log" | grep -E "error:|warning: .*(deprecated|Info.plist)|ARCHIVE" || true
+          test -d "$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app"
+          echo "errors: $(grep -c ' error:' "$RUNNER_TEMP/archive.log" || true)"
+      - name: Inspect archived app
+        run: |
+          APP="$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app"
+          for k in CFBundleIdentifier CFBundleDisplayName CFBundleShortVersionString CFBundleVersion MinimumOSVersion ITSAppUsesNonExemptEncryption UIDeviceFamily UISupportedInterfaceOrientations UIRequiredDeviceCapabilities LSApplicationCategoryType; do
+            printf '%s = ' "$k"; /usr/libexec/PlistBuddy -c "Print :$k" "$APP/Info.plist" | tr '\n' ' '; echo; done | tee "$RUNNER_TEMP/archive-info.txt"
+          P() { /usr/libexec/PlistBuddy -c "Print :$1" "$APP/Info.plist"; }
+          [ "$(P CFBundleIdentifier)" = "$BUNDLE_ID" ] && [ "$(P CFBundleDisplayName)" = "MERGE BLOOM" ] && [ "$(P CFBundleShortVersionString)" = "1.0.0" ] && [ "$(P CFBundleVersion)" = "1" ] && [ "$(P ITSAppUsesNonExemptEncryption)" = "false" ]
+          ls "$APP" | tee -a "$RUNNER_TEMP/archive-info.txt"
+          test -f "$APP/PrivacyInfo.xcprivacy"
+          plutil -p "$APP/PrivacyInfo.xcprivacy" | tee -a "$RUNNER_TEMP/archive-info.txt"
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :NSPrivacyTracking' "$APP/PrivacyInfo.xcprivacy")" = "false" ]
+          ls "$APP/Frameworks" | tee -a "$RUNNER_TEMP/archive-info.txt"
+          if grep -RIl -E "gc\.zgo\.at|goatcounter\.com/count" "$APP/public"; then echo "analytics found"; exit 1; fi
+          if grep -RIl -E "<script[^>]+src=[\"'](https?:)?//" "$APP/public"; then echo "remote script found"; exit 1; fi
+          test ! -e "$APP/public/sw.js"; test ! -e "$APP/public/manifest.webmanifest"
+          xcrun assetutil --info "$APP/Assets.car" | grep -E '"(Name|RenditionName|PixelWidth|Opaque)"' | head -20 | tee -a "$RUNNER_TEMP/archive-info.txt" || true
+          xcrun assetutil --info "$APP/Assets.car" | python3 -c "import json,sys;a=[x for x in json.load(sys.stdin) if x.get('Name')=='AppIcon' and x.get('PixelWidth')==1024];print('AppIcon 1024 opaque:',[x.get('Opaque') for x in a]);sys.exit(0)" | tee -a "$RUNNER_TEMP/archive-info.txt"
+          echo "### Archive OK (offline, unsigned, 0 errors)" >> "$GITHUB_STEP_SUMMARY"; sed 's/^/    /' "$RUNNER_TEMP/archive-info.txt" >> "$GITHUB_STEP_SUMMARY"
+      - name: Simulator build (throwaway copy with CI autoplay driver)
+        run: |
+          set -o pipefail
+          cp -R "$RUNNER_TEMP/clean/MergeBloom-iOS" "$RUNNER_TEMP/simcopy"
+          cd "$RUNNER_TEMP/simcopy"
+          cp "$GITHUB_WORKSPACE/ci/autoplay.js" App/App/public/ci-autoplay.js
+          sed -i '' 's#</body>#<script src="./ci-autoplay.js"></script></body>#' App/App/public/index.html
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" -c "Add :CFBundleURLTypes:0 dict" -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string mergebloomci" App/App/Info.plist
+          xcodebuild -project App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/dd-sim" CODE_SIGNING_ALLOWED=NO build | tail -3
+      - name: Run on simulators (6.9" screenshots, small screen, save data, background/foreground, no analytics)
+        timeout-minutes: 40
+        run: |
+          set -u
+          T() { local s=$1; shift; echo "[$(date +%T)] $*"; perl -e 'alarm shift; exec @ARGV' "$s" "$@"; local rc=$?; [ $rc -ne 0 ] && echo "[$(date +%T)] rc=$rc: $*"; return $rc; }
+          APP="$RUNNER_TEMP/dd-sim/Build/Products/Debug-iphonesimulator/App.app"
+          OUT="$RUNNER_TEMP/sim"; mkdir -p "$OUT/shots"
+          pick() { xcrun simctl list devices available -j | python3 -c "import json,sys;n=sys.argv[1];d=json.load(sys.stdin)['devices'];c=[(r,x['udid']) for r,l in d.items() if 'iOS' in r for x in l if x['name']==n];c.sort();print(c[-1][1] if c else '')" "$1"; }
+          bootit() { T 180 xcrun simctl boot "$1" && T 240 xcrun simctl bootstatus "$1" -b >/dev/null; }
+          waitfor() { local f=$1 pat=$2 t=${3:-90}; for i in $(seq 1 $((t*5))); do grep -q "$pat" "$f" 2>/dev/null && { echo "[$(date +%T)] got $pat"; return 0; }; sleep 0.2; done; echo "[$(date +%T)] TIMEOUT waiting for $pat"; tail -5 "$f"; return 1; }
+          FAIL=0
+          runon() {
+            local NAME=$1 TAG=$2 ALT=$3 UDID
+            UDID=$(pick "$NAME"); [ -n "$UDID" ] || { UDID=$(pick "$ALT"); NAME=$ALT; }
+            [ -n "$UDID" ] || { echo "no simulator for $1/$3"; return 1; }
+            echo "=== $TAG on $NAME ($UDID)"
+            if ! bootit "$UDID"; then
+              echo "boot hung; resetting CoreSimulator and retrying"
+              xcrun simctl shutdown all || true; killall -9 com.apple.CoreSimulator.CoreSimulatorService 2>/dev/null || true; sleep 5
+              T 120 xcrun simctl erase "$UDID" || true
+              bootit "$UDID" || return 1
+            fi
+            T 30 xcrun simctl status_bar "$UDID" override --time 9:41 --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 || true
+            T 120 xcrun simctl install "$UDID" "$APP"
+            shot() { T 30 xcrun simctl io "$UDID" screenshot --type=png "$OUT/shots/$TAG-$1.png" >/dev/null 2>&1 && echo "shot $TAG-$1"; }
+            local L1="$OUT/$TAG-console1.log" L2="$OUT/$TAG-console2.log" F=0
+            xcrun simctl launch --console-pty "$UDID" "$BUNDLE_ID" > "$L1" 2>&1 &
+            waitfor "$L1" 'CI:boot' 90 || F=1
+            waitfor "$L1" 'CI:menu' 120 && { sleep 0.3; shot 01-menu; } || F=1
+            waitfor "$L1" 'CI:map' 60 && { sleep 0.3; shot 03-map; } || F=1
+            waitfor "$L1" 'CI:chain' 240 && { for k in 1 2 3; do shot 02-gameplay-$k; done; } || F=1
+            waitfor "$L1" 'CI:clear' 180 && { sleep 0.3; shot 04-level-clear; } || F=1
+            waitfor "$L1" 'CI:daily' 60 && { sleep 0.3; shot 05-daily; } || F=1
+            waitfor "$L1" 'CI:album' 60 && { sleep 0.3; shot 06-album; } || F=1
+            waitfor "$L1" 'CI:run1-done' 60 || F=1
+            sleep 3
+            T 30 xcrun simctl terminate "$UDID" "$BUNDLE_ID"; sleep 2
+            xcrun simctl launch --console-pty "$UDID" "$BUNDLE_ID" > "$L2" 2>&1 &
+            waitfor "$L2" 'CI:run2 ' 90 || F=1
+            waitfor "$L2" 'CI:run2-home' 30 && { sleep 0.3; shot 07-menu-after-relaunch; } || F=1
+            waitfor "$L2" 'CI:bg-ready' 90 && { sleep 0.5; shot 08-in-level-before-background; } || F=1
+            T 60 xcrun simctl launch "$UDID" com.apple.Preferences; sleep 4
+            waitfor "$L2" 'CI:hidden' 10 || echo "note: no hidden marker"
+            T 30 xcrun simctl launch "$UDID" "$BUNDLE_ID" || T 30 xcrun simctl openurl "$UDID" mergebloomci://resume
+            waitfor "$L2" 'CI:resumed' 30 && { sleep 0.3; shot 09-paused-after-background; } || F=1
+            waitfor "$L2" 'CI:bg-done' 30 || F=1
+            T 30 xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
+            grep -h 'CI:' "$L1" "$L2" > "$OUT/$TAG-markers.txt"
+            echo "### $TAG: $NAME" >> "$GITHUB_STEP_SUMMARY"; sed 's/^/    /' "$OUT/$TAG-markers.txt" >> "$GITHUB_STEP_SUMMARY"
+            M="$OUT/$TAG-markers.txt"
+            chk() { if grep -q "$2" "$M"; then echo "$TAG $1 OK" | tee -a "$GITHUB_STEP_SUMMARY"; else echo "$TAG $1 FAILED" | tee -a "$GITHUB_STEP_SUMMARY"; F=1; fi; }
+            chk "native platform" 'CI:boot native=true'
+            chk "full-bleed canvas (no side bars)" 'fullbleed=true'
+            chk "no analytics global" 'goatcounter=undefined'
+            chk "no external requests (run1)" 'CI:ext \[\]'
+            chk "no external requests (run2)" 'ext=\[\]'
+            chk "save persisted across relaunch" 'CI:run2 scene=menu same=true'
+            chk "background -> auto-pause" 'CI:resumed scene=pause'
+            T 60 xcrun simctl shutdown "$UDID" || true
+            return $F
+          }
+          runon "iPhone 17 Pro Max" "69" "iPhone 16 Pro Max" || FAIL=1
+          runon "iPhone 16e" "small" "iPhone SE (3rd generation)" || FAIL=1
+          exit $FAIL
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: simulator-results
+          path: |
+            ${{ runner.temp }}/sim
+            ${{ runner.temp }}/archive-info.txt
+            ${{ runner.temp }}/archive.log
