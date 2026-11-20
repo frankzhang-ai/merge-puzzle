@@ -193,6 +193,8 @@ export class GameScene extends Phaser.Scene {
         resetStorage: () => {
           clearPrefixedStorage();
         },
+        /** Pause/resume rendering so a slow simulator screenshot captures a stable frame. */
+        freeze: (on: boolean) => { if (on) self.game.loop.sleep(); else self.game.loop.wake(); },
       },
     };
   }
@@ -1328,7 +1330,7 @@ export class GameScene extends Phaser.Scene {
 
   showAdMessage(): void {
     void tryRewardedAd('power-up');
-    this.toast('Rewarded ads coming later', 1480);
+    this.toast(IS_NATIVE_BUILD ? 'Out of uses today. Tools refill tomorrow!' : 'Rewarded ads coming later', 1480);
   }
 
   hammerAt(column: number, row: number): void {

@@ -12,6 +12,23 @@
     while (Date.now() < end) { if (fn()) return true; await wait(50); }
     return false;
   }
+  const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+  /** Freeze the frame, ask CI for a screenshot, wait until CI drops an ack file into the app bundle. */
+  async function shotPoint(name, settle = 900) {
+    await wait(settle);
+    await frame(); await frame();
+    H().qa.freeze(true);
+    log('shot ' + name);
+    const end = Date.now() + 150000;
+    let ok = false;
+    while (Date.now() < end) {
+      try { const r = await fetch('./ci-ack-' + name + '.txt?t=' + Date.now(), { cache: 'no-store' }); if (r.ok) { ok = true; break; } } catch (e) { /* not yet */ }
+      await wait(400);
+    }
+    H().qa.freeze(false);
+    if (!ok) log('ack-timeout ' + name);
+    await wait(300);
+  }
   const idle = () => until(() => { const s = S(); return !s.busy && s.inputQueue === 0; }, 15000);
 
   function bestColumn(holdChains = false) {
@@ -41,7 +58,7 @@
       if (col < 0) ({ col, sim } = bestColumn());
       if (col < 0) return false;
       H().qa.dropColumn(col);
-      if (sim && sim.chain >= 2 && i >= minDrops) { await wait(420); log('chain chain=' + sim.chain); await wait(2600); await idle(); return true; }
+      if (sim && sim.chain >= 2 && i >= minDrops) { await wait(600); log('chain chain=' + sim.chain); await shotPoint('02-gameplay', 0); await idle(); return true; }
       await idle();
       await wait(80);
     }
@@ -93,10 +110,10 @@
     log('wins ' + wins.join(','));
     H().qa.goto('menu'); await wait(1500);
     log('menu');
-    await wait(2500);
+    await shotPoint('01-menu');
     H().qa.goto('map'); await wait(2500);
     log('map');
-    await wait(2500);
+    await shotPoint('03-map');
     // Animated gameplay with a real chain/combo.
     let got = false;
     for (let seed = 1; seed <= 8 && !got; seed += 1) {
@@ -116,13 +133,13 @@
     if (S().scene !== 'clear') await winLevel(7);
     await wait(2600);
     log('clear scene=' + S().scene + ' stars=' + S().starsEarned);
-    await wait(2500);
+    await shotPoint('04-level-clear');
     H().qa.goto('daily'); await wait(2000);
     log('daily');
-    await wait(2500);
+    await shotPoint('05-daily');
     H().qa.goto('album'); await wait(2000);
     log('album');
-    await wait(2500);
+    await shotPoint('06-album');
     // Persist: sound off + progress are written by the game itself.
     H().qa.goto('menu'); await wait(500);
     const sound = S().sound;
@@ -139,12 +156,13 @@
     const best = JSON.stringify(S().bestStars);
     log('run2 scene=' + S().scene + ' same=' + (best === localStorage.getItem('ci.best')) + ' best=' + best);
     localStorage.setItem('ci.run1', 'checked');
-    await wait(2000);
     log('run2-home');
+    await shotPoint('07-menu-after-relaunch', 1500);
     H().qa.instant = false;
     H().qa.startLevel(12, { tutorial: false, seed: 4242 });
     await wait(1200);
     for (let i = 0; i < 2; i += 1) { const { col } = bestColumn(); if (col >= 0) H().qa.dropColumn(col); await idle(); }
+    await shotPoint('08-in-level-before-background');
     const moves = S().moves;
     const back = new Promise((resolve) => {
       let hidden = false;
@@ -156,7 +174,7 @@
     await back;
     await wait(1200);
     log('resumed scene=' + S().scene + ' moves=' + S().moves);
-    await wait(3000);
+    await shotPoint('09-paused-after-background');
     H().qa.goto('game');
     await wait(800);
     log('bg-done scene=' + S().scene + ' moves=' + S().moves + ' ext=' + JSON.stringify(resources()));

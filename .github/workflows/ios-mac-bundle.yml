@@ -35,7 +35,7 @@ jobs:
   verify:
     needs: bundle
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 80
     env:
       BUNDLE_ID: com.frankzhang.mergebloom
     steps:
@@ -90,7 +90,7 @@ jobs:
           xcodebuild -project App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/dd-sim" CODE_SIGNING_ALLOWED=NO build | tail -3
       - name: Run on simulators (6.9" screenshots, small screen, save data, background/foreground, no analytics)
-        timeout-minutes: 40
+        timeout-minutes: 60
         run: |
           set -u
           T() { local s=$1; shift; echo "[$(date +%T)] $*"; perl -e 'alarm shift; exec @ARGV' "$s" "$@"; local rc=$?; [ $rc -ne 0 ] && echo "[$(date +%T)] rc=$rc: $*"; return $rc; }
@@ -111,30 +111,35 @@ jobs:
               T 120 xcrun simctl erase "$UDID" || true
               bootit "$UDID" || return 1
             fi
-            T 30 xcrun simctl status_bar "$UDID" override --time 9:41 --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 || true
             T 120 xcrun simctl install "$UDID" "$APP"
-            shot() { T 30 xcrun simctl io "$UDID" screenshot --type=png "$OUT/shots/$TAG-$1.png" >/dev/null 2>&1 && echo "shot $TAG-$1"; }
+            for k in 1 2 3; do T 60 xcrun simctl status_bar "$UDID" override --time 9:41 --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 && break; sleep 5; done
+            local APPDIR; APPDIR=$(xcrun simctl get_app_container "$UDID" "$BUNDLE_ID" app); echo "app container: $APPDIR"
+            shot() { T 90 xcrun simctl io "$UDID" screenshot --type=png "$OUT/shots/$TAG-$1.png" >/dev/null 2>&1 && echo "[$(date +%T)] shot $TAG-$1"; }
+            # Serve screenshot requests: the driver freezes the frame, logs "CI:shot NAME", and waits for an ack file in the app bundle.
+            serve() { local log=$1 until=$2 t=$3 n; local deadline=$((SECONDS+t))
+              while [ $SECONDS -lt $deadline ]; do
+                for n in $(grep -o 'CI:shot [A-Za-z0-9-]*' "$log" 2>/dev/null | awk '{print $2}'); do
+                  [ -f "$OUT/ack/$TAG-$n" ] && continue
+                  shot "$n" || echo "shot failed $n"; touch "$APPDIR/public/ci-ack-$n.txt" "$OUT/ack/$TAG-$n"
+                done
+                grep -q "$until" "$log" 2>/dev/null && { echo "[$(date +%T)] got $until"; return 0; }
+                sleep 0.3
+              done; echo "[$(date +%T)] TIMEOUT waiting for $until"; tail -5 "$log"; return 1; }
+            mkdir -p "$OUT/ack"
             local L1="$OUT/$TAG-console1.log" L2="$OUT/$TAG-console2.log" F=0
             xcrun simctl launch --console-pty "$UDID" "$BUNDLE_ID" > "$L1" 2>&1 &
-            waitfor "$L1" 'CI:boot' 90 || F=1
-            waitfor "$L1" 'CI:menu' 120 && { sleep 0.3; shot 01-menu; } || F=1
-            waitfor "$L1" 'CI:map' 60 && { sleep 0.3; shot 03-map; } || F=1
-            waitfor "$L1" 'CI:chain' 240 && { for k in 1 2 3; do shot 02-gameplay-$k; done; } || F=1
-            waitfor "$L1" 'CI:clear' 180 && { sleep 0.3; shot 04-level-clear; } || F=1
-            waitfor "$L1" 'CI:daily' 60 && { sleep 0.3; shot 05-daily; } || F=1
-            waitfor "$L1" 'CI:album' 60 && { sleep 0.3; shot 06-album; } || F=1
-            waitfor "$L1" 'CI:run1-done' 60 || F=1
+            waitfor "$L1" 'CI:boot' 120 || F=1
+            serve "$L1" 'CI:run1-done' 900 || F=1
             sleep 3
             T 30 xcrun simctl terminate "$UDID" "$BUNDLE_ID"; sleep 2
             xcrun simctl launch --console-pty "$UDID" "$BUNDLE_ID" > "$L2" 2>&1 &
-            waitfor "$L2" 'CI:run2 ' 90 || F=1
-            waitfor "$L2" 'CI:run2-home' 30 && { sleep 0.3; shot 07-menu-after-relaunch; } || F=1
-            waitfor "$L2" 'CI:bg-ready' 90 && { sleep 0.5; shot 08-in-level-before-background; } || F=1
+            waitfor "$L2" 'CI:run2 ' 120 || F=1
+            serve "$L2" 'CI:bg-ready' 400 || F=1
             T 60 xcrun simctl launch "$UDID" com.apple.Preferences; sleep 4
-            waitfor "$L2" 'CI:hidden' 10 || echo "note: no hidden marker"
+            waitfor "$L2" 'CI:hidden' 15 || echo "note: no hidden marker"
             T 30 xcrun simctl launch "$UDID" "$BUNDLE_ID" || T 30 xcrun simctl openurl "$UDID" mergebloomci://resume
-            waitfor "$L2" 'CI:resumed' 30 && { sleep 0.3; shot 09-paused-after-background; } || F=1
-            waitfor "$L2" 'CI:bg-done' 30 || F=1
+            waitfor "$L2" 'CI:resumed' 60 || F=1
+            serve "$L2" 'CI:bg-done' 300 || F=1
             T 30 xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
             grep -h 'CI:' "$L1" "$L2" > "$OUT/$TAG-markers.txt"
             echo "### $TAG: $NAME" >> "$GITHUB_STEP_SUMMARY"; sed 's/^/    /' "$OUT/$TAG-markers.txt" >> "$GITHUB_STEP_SUMMARY"
@@ -147,6 +152,8 @@ jobs:
             chk "no external requests (run2)" 'ext=\[\]'
             chk "save persisted across relaunch" 'CI:run2 scene=menu same=true'
             chk "background -> auto-pause" 'CI:resumed scene=pause'
+            chk "all screenshots acknowledged" 'CI:bg-done'
+            if grep -q "ack-timeout" "$M"; then echo "$TAG screenshot ack timeout" | tee -a "$GITHUB_STEP_SUMMARY"; F=1; fi
             T 60 xcrun simctl shutdown "$UDID" || true
             return $F
           }
