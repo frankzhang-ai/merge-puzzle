@@ -153,7 +153,8 @@ export function addFlower(
 
 export function drawStone(scene: Phaser.Scene, x: number, y: number, hp: number): void {
   const key = hp > 1 ? ART.stone2 : ART.stone;
-  if (scene.textures.exists(key)) { scene.add.image(x,y,key).setDisplaySize(72,72); return; }
+  drawGroundShadow(scene, x, y + 30, 66, 18, 0.3);
+  if (scene.textures.exists(key)) { scene.add.image(x, y - 2, key).setDisplaySize(72, 72); return; }
   const graphics = scene.add.graphics();
   const radius = hp > 1 ? 34 : 30;
   graphics.fillStyle(0x855875, 0.18);
@@ -254,15 +255,21 @@ export function addIconButton(
   buttons: Record<string, { x: number; y: number; w: number; h: number }>,
   key: string,
   caption = '',
+  locked = false,
 ): void {
   if (scene.textures.exists(texture)) {
-    scene.add.image(x, y, texture).setDisplaySize(size, size);
+    const image = scene.add.image(x, y, texture).setDisplaySize(size, size).setDepth(10);
+    if (locked) { image.setTint(0xb9b1be); image.setAlpha(0.62); }
   } else {
-    scene.add.circle(x, y, size / 2, 0xffd1a8);
+    scene.add.circle(x, y, size / 2, locked ? 0xd9d0d6 : 0xffd1a8).setDepth(10);
   }
-  if (caption) addText(scene, x, y + size * 0.52, caption, 16, INK);
+  if (locked) drawLock(scene, x + size * 0.28, y - size * 0.28, 34, 12);
+  if (caption) {
+    const width = locked ? 236 : 150;
+    addPill(scene, x, y + size * 0.5 + 38, width, 46, caption, locked ? 22 : 24, locked ? '#6f6275' : INK, locked ? 0xece6ee : 0xffffff, 12);
+  }
   const hit = Math.max(size, 88);
-  const rect = { x: x - hit / 2, y: y - hit / 2, w: hit, h: hit + (caption ? 22 : 0) };
+  const rect = { x: x - hit / 2, y: y - hit / 2, w: hit, h: hit + (caption ? 90 : 0) };
   buttons[key] = rect;
   scene.add.zone(rect.x, rect.y, rect.w, rect.h)
     .setOrigin(0)
@@ -274,4 +281,81 @@ export function addBoardFrame(scene: Phaser.Scene): void {
   if (!scene.textures.exists(ART.frame)) return;
   // Logical board is 700x900 at (40, 560). The art has a thick wooden border.
   scene.add.image(390, 1010, ART.frame).setDisplaySize(780, 1040).setDepth(-1);
+}
+
+/** Goal/tool icons have 1-2px slivers at their edges; crop them off. */
+export function addIcon(scene: Phaser.Scene, key: string, x: number, y: number, size: number): Phaser.GameObjects.Image {
+  const image = scene.add.image(x, y, key);
+  if (scene.textures.exists(key)) {
+    image.setCrop(12, 12, 168, 168);
+    image.setDisplaySize(size * 192 / 168, size * 192 / 168);
+  }
+  return image;
+}
+
+export function addPill(
+  scene: Phaser.Scene, x: number, y: number, width: number, height: number, label: string, size: number,
+  color = INK, fill = 0xffffff, depth = 20,
+): void {
+  const g = scene.add.graphics().setDepth(depth);
+  g.fillStyle(fill, 0.94);
+  g.fillRoundedRect(x - width / 2, y - height / 2, width, height, height / 2);
+  g.lineStyle(3, 0xffcdda, 1);
+  g.strokeRoundedRect(x - width / 2, y - height / 2, width, height, height / 2);
+  addText(scene, x, y, label, size, color).setDepth(depth + 1);
+}
+
+export function drawLock(scene: Phaser.Scene, x: number, y: number, s: number, depth = 22): Phaser.GameObjects.Graphics {
+  const g = scene.add.graphics().setDepth(depth);
+  g.lineStyle(Math.max(3, s * 0.16), 0x6f6275, 1);
+  g.beginPath();
+  g.arc(x, y - s * 0.1, s * 0.3, Math.PI, 0, false);
+  g.strokePath();
+  g.fillStyle(0x8a7d93, 1);
+  g.fillRoundedRect(x - s * 0.45, y - s * 0.1, s * 0.9, s * 0.7, s * 0.14);
+  g.fillStyle(0xfff1a8, 1);
+  g.fillCircle(x, y + s * 0.22, s * 0.1);
+  return g;
+}
+
+export function drawChest(scene: Phaser.Scene, x: number, y: number, s: number, glow = false): Phaser.GameObjects.Graphics {
+  const g = scene.add.graphics();
+  if (glow) { g.fillStyle(0xffe27a, 0.45); g.fillCircle(x, y, s * 0.95); }
+  g.fillStyle(0x855875, 0.22);
+  g.fillEllipse(x, y + s * 0.5, s * 1.2, s * 0.3);
+  g.fillStyle(0xc88a4a, 1);
+  g.fillRoundedRect(x - s * 0.55, y - s * 0.05, s * 1.1, s * 0.55, s * 0.08);
+  g.fillStyle(0xe0a45e, 1);
+  g.fillRoundedRect(x - s * 0.55, y - s * 0.5, s * 1.1, s * 0.5, { tl: s * 0.4, tr: s * 0.4, bl: 0, br: 0 });
+  g.fillStyle(0xffd45e, 1);
+  g.fillRect(x - s * 0.08, y - s * 0.5, s * 0.16, s * 1.0);
+  g.fillRect(x - s * 0.55, y - s * 0.08, s * 1.1, s * 0.1);
+  g.fillStyle(0xfff1a8, 1);
+  g.fillCircle(x, y + s * 0.08, s * 0.1);
+  g.lineStyle(3, 0x59465b, 0.8);
+  g.strokeRoundedRect(x - s * 0.55, y - s * 0.5, s * 1.1, s * 1.0, s * 0.1);
+  return g;
+}
+
+export function addBubble(
+  scene: Phaser.Scene, x: number, y: number, width: number, label: string, size: number,
+  tail: 'left' | 'down' | 'right' = 'down', depth = 30,
+): void {
+  const text = addText(scene, x, y, label, size, INK, { wordWrap: { width: width - 36 } }).setDepth(depth + 1);
+  const height = Math.max(64, text.height + 30);
+  const g = scene.add.graphics().setDepth(depth);
+  g.fillStyle(0xffffff, 0.97);
+  g.fillRoundedRect(x - width / 2, y - height / 2, width, height, 26);
+  g.lineStyle(4, 0xffcdda, 1);
+  g.strokeRoundedRect(x - width / 2, y - height / 2, width, height, 26);
+  g.fillStyle(0xffffff, 0.97);
+  if (tail === 'down') g.fillTriangle(x - 16, y + height / 2 - 2, x + 16, y + height / 2 - 2, x, y + height / 2 + 22);
+  else if (tail === 'left') g.fillTriangle(x - width / 2 + 2, y - 14, x - width / 2 + 2, y + 14, x - width / 2 - 22, y + 4);
+  else g.fillTriangle(x + width / 2 - 2, y - 14, x + width / 2 - 2, y + 14, x + width / 2 + 22, y + 4);
+}
+
+export function drawGroundShadow(scene: Phaser.Scene, x: number, y: number, w: number, h: number, alpha: number): void {
+  const g = scene.add.graphics();
+  g.fillStyle(0x855875, alpha);
+  g.fillEllipse(x, y, w, h);
 }

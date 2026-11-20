@@ -4,12 +4,12 @@ Starting obstacle locations are deterministic in `src/config/levels.ts`; stones 
 
 | Level | Boss | Goal | Moves | 2★ remaining | 3★ remaining | Starting obstacles | Piece bias |
 |---:|:---:|---|---:|---:|---:|---|---|
-| 1 | No | Make 1 × Lv.3 | 20 | 3 | 8 | None | mostly singles L1; occasional L2 |
-| 2 | No | Make 2 × Lv.3 | 18 | 3 | 7 | None | singles L1–L2 |
-| 3 | No | Score 200 | 20 | 3 | 8 | 1 stone + 1 vine flower | singles L1–L2 |
-| 4 | No | Clear 3 obstacles | 16 | 3 | 6 | 3 stones | singles L1–L2 |
-| 5 | Yes | Make 1 × Lv.4 AND clear 2 obstacles | 18 | 3 | 7 | 2 stones + L1 flowers | singles L1–L2 |
-| 6 | No | Make 3 × Lv.3 | 18 | 3 | 7 | None | occasional pairs L1–L2 |
+| 1 | No | Make 1 × Lv.3 | 20 | 3 | 8 | Starter flowers | mostly singles L1; occasional L2 |
+| 2 | No | Make 2 × Lv.3 | 20 | 3 | 8 | Starter flowers | singles L1–L2 |
+| 3 | No | Score 150 | 22 | 3 | 9 | 1 stone + 1 vine flower | singles L1–L2 |
+| 4 | No | Clear 2 obstacles | 22 | 4 | 9 | 2 stones low in the corners, each beside a flower pair (one matching drop clears one) | singles L1–L2 |
+| 5 | Yes | Make 2 × Lv.3 AND clear 2 obstacles | 22 | 4 | 9 | 2 stones + starter flowers | singles L1–L2 |
+| 6 | No | Make 3 × Lv.3 | 24 | 4 | 9 | Starter flowers | occasional pairs L1–L2 |
 | 7 | No | Clear 4 obstacles | 16 | 3 | 6 | 4 vine flowers | singles and pairs L1–L2 |
 | 8 | No | Score 400 | 18 | 3 | 6 | None | singles L1–L3 |
 | 9 | No | Make 2 × Lv.4 | 20 | 3 | 7 | None | singles L1–L3 |
@@ -34,3 +34,11 @@ Starting obstacle locations are deterministic in `src/config/levels.ts`; stones 
 | 28 | No | Score 1500 | 22 | 3 | 7 | None | pieces L1–5 |
 | 29 | No | Make 2 × Lv.7 | 26 | 3 | 8 | None | pieces L1–4 |
 | 30 | Yes | Make 1 × Lv.8 AND score 800 AND clear 4 obstacles | 30 | 3 | 10 | 4 stones (two hp2) | pieces L1–4 |
+
+## v3 notes
+
+- Levels 1–6 start with a few pre-placed flowers (never an instant match, always resting on the floor/stack). Tutorial levels 1–4 use scripted boards and piece queues (`src/systems/tutorial.ts`).
+- Difficulty ramp checked with `node --experimental-strip-types tools/simulate-levels.ts` (greedy bot, 40 seeds): L4 is the gentlest, L5 (boss) modest, L6 slightly harder.
+- Goal semantics (`src/systems/goals.ts`): **make** counts merges that produce exactly that flower level (pre-placed flowers never count); **clear** counts stones destroyed (an hp2 stone counts once, when it breaks) plus vines unwrapped; **score** is the running score. Progress starts at 0 on start/restart/retry and is clamped to the target for display.
+- Tools unlock by campaign progress: Undo at Lv. 2, Hammer at Lv. 3, Shuffle at Lv. 4 (reaching a level = having cleared the one before). Locked tools show a grey button, a lock and "Unlock at Lv. X".
+- Skins also unlock from total stars: Dawn Petal at 15 ★, Night Bloom at 40 ★ (streak unlocks still apply).

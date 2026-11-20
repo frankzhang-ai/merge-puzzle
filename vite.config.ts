@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
+import { CACHE_PREFIX } from './src/config/runtime.ts';
 
 function walkPublic(dir: string, prefix = ''): string[] {
   const entries = readdirSync(dir);
@@ -21,7 +22,7 @@ function serviceWorker(cachePrefix: string): Plugin {
     name: 'mergebloom-service-worker',
     generateBundle(_options, bundle) {
       const builtFiles = Object.keys(bundle).filter((file) => /\.(js|css)$/.test(file));
-      const lazy = /\/(map\.webp|pose-.*\.webp)$/;
+      const lazy = /\/(map-tall\.webp|pose-.*\.webp)$/;
       const publicFiles = walkPublic('public').filter((file) => !lazy.test(file));
       const manifest = [
         './index.html',
@@ -49,9 +50,9 @@ function serviceWorker(cachePrefix: string): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
-  const preview2 = mode === 'preview2' || mode === 'production';
-  const outDir = preview2 ? 'dist-preview2' : 'dist';
-  const cachePrefix = 'mp2-';
+  const preview3 = mode === 'preview3' || mode === 'production';
+  const outDir = preview3 ? 'dist-preview3' : 'dist';
+  const cachePrefix = CACHE_PREFIX;
   return {
     base: './',
     plugins: [serviceWorker(cachePrefix)],

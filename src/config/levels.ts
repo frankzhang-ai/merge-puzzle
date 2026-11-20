@@ -24,11 +24,11 @@ export interface Level {
 type LevelRow = [GoalKind, number, number | undefined, number, number, number, string];
 const rows: LevelRow[] = [
   ['make', 1, 3, 20, 3, 8, 'mostly singles L1; occasional L2'],
-  ['make', 2, 3, 18, 3, 7, 'singles L1–L2'],
-  ['score', 200, undefined, 20, 3, 8, 'singles L1–L2'],
-  ['clear', 3, undefined, 16, 3, 6, 'singles L1–L2'],
-  ['make', 1, 4, 18, 3, 7, 'singles L1–L2'],
-  ['make', 3, 3, 18, 3, 7, 'occasional pairs L1–L2'],
+  ['make', 2, 3, 20, 3, 8, 'singles L1–L2'],
+  ['score', 150, undefined, 22, 3, 9, 'singles L1–L2'],
+  ['clear', 2, undefined, 22, 4, 9, 'singles L1–L2'],
+  ['make', 2, 3, 22, 4, 9, 'singles L1–L2'],
+  ['make', 3, 3, 24, 4, 9, 'occasional pairs L1–L2'],
   ['clear', 4, undefined, 16, 3, 6, 'singles and pairs L1–L2'],
   ['score', 400, undefined, 18, 3, 6, 'singles L1–L3'],
   ['make', 2, 4, 20, 3, 7, 'singles L1–L3'],
@@ -55,11 +55,22 @@ const rows: LevelRow[] = [
   ['make', 1, 8, 30, 3, 10, 'pieces L1–4'],
 ];
 
+/** Pre-placed flowers [row, col, level]; never form an instant match and rest on the floor/stack. */
+const starterFlowers: Record<number, number[][]> = {
+  1: [[8, 0, 1], [8, 1, 1], [8, 3, 2], [8, 5, 1], [8, 6, 1]],
+  2: [[8, 0, 1], [8, 1, 1], [8, 3, 2], [8, 5, 1], [8, 6, 1], [7, 3, 3]],
+  3: [[8, 1, 1], [8, 2, 1], [8, 4, 3], [8, 6, 1], [7, 6, 1]],
+  // L4: each stone sits beside a pair, so ONE matching drop clears it (L1 at col 3, L2 at col 5).
+  4: [[8, 1, 1], [8, 2, 1], [8, 4, 3], [8, 5, 2], [7, 5, 2]],
+  5: [[8, 0, 1], [8, 1, 2], [8, 2, 2], [8, 4, 2], [8, 5, 2], [8, 6, 1], [7, 0, 2]],
+  6: [[8, 0, 1], [8, 1, 1], [8, 3, 2], [8, 5, 1], [8, 6, 1], [7, 3, 3], [7, 0, 2]],
+};
+
 const bosses = new Set([5, 10, 15, 20, 25, 30]);
 const stoneCells: Record<number, number[][]> = {
   3: [[8, 3]],
-  4: [[4, 1], [5, 3], [4, 5]],
-  5: [[5, 2], [6, 4]],
+  4: [[8, 0], [8, 6]],
+  5: [[7, 1], [7, 5]],
   10: [[4, 1], [6, 3], [4, 5]],
   11: [[4, 1], [5, 3], [4, 5], [6, 5]],
   14: [[5, 1], [4, 3], [4, 5]],
@@ -102,10 +113,7 @@ export function makeLevel(n: number): Level {
   (vineCells[n] ?? []).forEach(([r, c], index) => {
     board[r]![c] = { kind: 'flower', level: index % 2 + 1, vine: true };
   });
-  if (n === 5) {
-    board[8]![0] = { kind: 'flower', level: 1 };
-    board[8]![6] = { kind: 'flower', level: 1 };
-  }
+  for (const [r, c, lv] of starterFlowers[n] ?? []) board[r]![c] = { kind: 'flower', level: lv };
   return {
     n,
     boss: bosses.has(n),

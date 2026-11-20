@@ -1,4 +1,5 @@
-export const MAP_SIZE = { width: 780, height: 1170 } as const;
+/** Map art is shipped at 1.5x (map-tall.webp = 1170x1755 + 150px reflected ground pad). */
+export const MAP_SIZE = { width: 1170, height: 1755, pad: 150 } as const;
 export const MAP_NODES: Array<{ x: number; y: number }> = [
   { x: 0.2744, y: 0.9521 },
   { x: 0.2128, y: 0.8803 },
@@ -31,3 +32,13 @@ export const MAP_NODES: Array<{ x: number; y: number }> = [
   { x: 0.4397, y: 0.1188 },
   { x: 0.5513, y: 0.088 },
 ];
+
+/** Gift chests (every 5th level, shown after the boss node) on baked path circles, as map fractions. */
+export const MAP_GIFTS: Record<number, { x: number; y: number }> = {
+  5: { x: 0.4308, y: 0.9607 },
+  10: { x: 0.7487, y: 0.4701 },
+  15: { x: 0.8564, y: 0.3778 },
+  20: { x: 0.3154, y: 0.2000 },
+  25: { x: 0.6513, y: 0.0547 },
+  30: { x: 0.3103, y: 0.0940 },
+};

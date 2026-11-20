@@ -281,3 +281,25 @@ export function piece(random: RNG, maxLevel = 2): number[] {
   const cap = Math.min(4, maxLevel);
   return Array.from({ length: pair ? 2 : 1 }, () => 1 + random.int(cap));
 }
+
+/** Shuffle flower levels among non-vine flower cells; retries so no instant match forms. */
+export function shuffleBoard(board: Grid, random: () => number): void {
+  const spots: { row: number; column: number }[] = [];
+  const levelsList: number[] = [];
+  board.forEach((cells, row) => cells.forEach((cell, column) => {
+    if (cell?.kind === 'flower' && !cell.vine) { spots.push({ row, column }); levelsList.push(cell.level); }
+  }));
+  let best = levelsList;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const candidate = [...levelsList];
+    for (let index = candidate.length - 1; index > 0; index -= 1) {
+      const swap = Math.floor(random() * (index + 1));
+      [candidate[index], candidate[swap]] = [candidate[swap]!, candidate[index]!];
+    }
+    spots.forEach((spot, index) => { board[spot.row]![spot.column] = { kind: 'flower', level: candidate[index]! }; });
+    best = candidate;
+    if (groups(board).length === 0) break;
+  }
+  spots.forEach((spot, index) => { board[spot.row]![spot.column] = { kind: 'flower', level: best[index]! }; });
+  gravity(board);
+}

@@ -2,14 +2,14 @@ import type Phaser from 'phaser';
 
 export const ART = {
   bg: 'bg', frame: 'board-frame', stone: 'stone', stone2: 'stone-hp2', vine: 'vine',
-  star: 'star', emptyStar: 'star-empty', hand: 'hand', logo: 'logo-hero',
+  star: 'star', emptyStar: 'star-empty', hand: 'hand', logo: 'logo-hero-soft',
   undo: 'btn-undo', hammer: 'btn-hammer', shuffle: 'btn-shuffle', pause: 'btn-pause',
   sound: 'btn-sound', muted: 'btn-sound-off', goalMake: 'goal-make', goalClear: 'goal-clear', goalScore: 'goal-score',
-  clearPose: 'pose-clear', failPose: 'pose-fail', dailyPose: 'pose-daily', albumPose: 'pose-album', map: 'map',
+  clearPose: 'pose-clear', failPose: 'pose-fail', dailyPose: 'pose-daily', albumPose: 'pose-album', map: 'map-tall',
 } as const;
 
 const CRITICAL = [
-  'bg','board-frame','stone','stone-hp2','vine','star','star-empty','hand','logo-hero',
+  'bg','board-frame','stone','stone-hp2','vine','star','star-empty','hand','logo-hero-soft',
   'btn-undo','btn-hammer','btn-shuffle','btn-sound','btn-sound-off','btn-pause',
   'goal-make','goal-clear','goal-score',
 ];
