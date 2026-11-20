@@ -132,7 +132,7 @@
 - 存档：关卡星数、图鉴、皮肤、声音开关都存在本机（WKWebView localStorage），每次变化立刻写入；切到后台时再保存一次并自动暂停（回来看到 PAUSED 面板）。已在 CI 模拟器里验证重启 App 后进度保留。
 - 全面屏：画面铺满整个屏幕（背景延伸到状态栏和两侧），按钮和棋盘都在安全区内，**两侧不会出现白边**；已在 6.9 寸（iPhone 17 Pro Max）和小屏（iPhone 16e）模拟器上截图核对。
 - App 内「Privacy」页面写明：iPhone App 不含统计、不收集任何数据。
-- 已验证：GitHub Actions macOS 在断开 GitHub/npm 的干净机器上，用这份 zip 完成了无签名 `xcodebuild archive` 和两台模拟器测试：CI_RUN_URL
+- 已验证：GitHub Actions macOS 在断开 GitHub/npm 的干净机器上，用这份 zip 完成了无签名 `xcodebuild archive` 和两台模拟器测试：<https://github.com/frankzhang-ai/merge-puzzle/actions/runs/44681175008>（commit 827663c，Xcode 26 / macOS 26 runner，0 errors；iPhone 17 Pro Max + iPhone 16e 全部检查通过）
 
 ### 以后改网页代码时
 本压缩包是“冻结”的成品。网页有更新时，由我在服务器上重新生成新的 zip（脚本 `native/scripts/make-ios-mac-bundle.sh`），**不要**在这个文件夹里跑 `npx cap sync`（它会把依赖路径改回 node_modules，Mac 上就编译不了了）。上传新版本时把 **Build** 号 +1。

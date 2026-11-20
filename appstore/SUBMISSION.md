@@ -117,7 +117,15 @@ No account, no ads, no in-app purchases, no analytics, no tracking, no data coll
 ## 12. Screenshots (6.9", 1320×2868, RGB, no alpha)
 Path: `/workspace/merge-puzzle/appstore/screenshots/6.9-sim/`. Real captures from the app running in the iPhone 17 Pro Max simulator on GitHub Actions (status bar fixed at 9:41, full Wi-Fi/cellular/battery). A CI-only script (not in the shipped app) drives the real game through the same drop function a tap uses, with a simple greedy bot, so scores, stars and combos are really played, not mocked.
 
-SCREENSHOT_TABLE
+| File (1320×2868, RGB, no alpha – verified) | Content |
+|---|---|
+| `01-menu.png` | Main menu with the MERGE BLOOM hero art |
+| `02-gameplay-merge.png` | Level 10 in play: stone obstacle, goal bar, a merge popping into a bigger flower (frame frozen mid-merge) |
+| `03-map.png` | Garden map: levels 1–7 cleared with stars, boss nodes, gift chests, "Level 7 — let's go!" |
+| `04-level-clear.png` | Level 7 cleared with 3 stars, score 500 |
+| `05-daily-challenge.png` | Daily Challenge card |
+
+Source run: https://github.com/frankzhang-ai/merge-puzzle/actions/runs/44681175008 (all checks passed). Verification captures (iPhone 16e, relaunch, background/pause) are in `appstore/screenshots/ci-verification/`.
 
 Upload the 6.9" set only; App Store Connect scales it for smaller iPhones.
 
